@@ -10,5 +10,9 @@ if __name__ == '__main__':
     '''Инициализация базы данных'''
     metadata.create_all(engine)
     database.connect()
+
+    # запуск параллельных задач
     asyncio.run(main())
+
+
     database.disconnect()

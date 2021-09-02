@@ -22,7 +22,7 @@ def ping(bot: Bot):
             success = requests.get('https://market.csgo.com/api/v2/ping', params = {'key': bot.api_key}).json().get('success', False)
 
 
-def balance(bot: Bot):
+def bot_balance(bot: Bot):
     bot.balance = requests.get('https://market.csgo.com/api/v2/get-money', params={'key': bot.api_key}).json().get('money', 0)
     return bot.balance
 
@@ -34,7 +34,7 @@ async def bot_state(bot: Bot) -> bool:
     return bot.state
 
 
-async def update_database_with_inventory(bot: Bot, use_current_items: str = 'hold'):
+async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 'hold'):
     '''
     Берём данные об инвентаре аккаунта из api и добавляем их в базу данных.
     Если current_items == "hold", то предметы не учавствуют в торгах и назодятся "на удержании".
@@ -78,27 +78,18 @@ async def update_database_with_inventory(bot: Bot, use_current_items: str = 'hol
         
 
 
-def bot_start(bot: Bot):
-    '''Создание бота, но предметы в инвентаре отсутствуют в базе по умолчанию (а значит и не учавствуют в торгах))'''
-    steam_client = SteamClient(bot.api_key)
-    steam_client.login(
-        bot.username,
-        bot.password,
-        bot.steamguard_file
-    )
-    return steam_client
+# def bot_start(bot: Bot):
+#     '''Создание бота, но предметы в инвентаре отсутствуют в базе по умолчанию (а значит и не учавствуют в торгах))'''
+#     steam_client = SteamClient(bot.api_key)
+#     steam_client.login(
+#         bot.username,
+#         bot.password,
+#         bot.steamguard_file
+#     )
+#     return steam_client
 
-def bot_stop(steam_client: SteamClient):
-    steam_client.logout()
-
-async def bot_add_current_inventory(bot: Bot):
-    '''
-    Добавляет все предметы из инвентаря Steam в базу, но изначально они не учавствуют в торгах.
-    Добавить добавить их на торги можно вручную (через запрос к базе через доступный интерфейс) 
-    '''
-    await update_database_with_inventory(bot)
-
-
+# def bot_stop(steam_client: SteamClient):
+#     steam_client.logout()
 
 async def bot_work(bot: Bot):
     '''Проверка бота на кативность происходит в главном потоке, при получении из базы'''
@@ -110,6 +101,8 @@ async def bot_work(bot: Bot):
 
 # делает один оборот 
 async def bot_round_group(bot: Bot, group: ItemGroup):
+
+    bot.state = 'in_circle'
 
     if group.state == 'active':
         items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
@@ -139,11 +132,15 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         items_list = await Item.objects.filter(item_group=group).all()
         task_sell_all = asyncio.create_task(sell_group(bot))
         await task_sell_all
+        group.state = 'disabled'
 
     if group.state == 'buy':
         items_list = await Item.objects.filter(item_group=group).all()
         task_buy_all = asyncio.create_task(buy_group(bot, group))
         await task_buy_all
+        group.state = 'disabled'
+    
+    bot.state = 'circle_ended'
 
 
 
@@ -182,9 +179,8 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
 
         success = False
         while not success:
-            ping(bot)
-            if balance(bot) - item.buy_for >= 10:
-                
+            if bot_balance(bot) - item.buy_for >= 10:
+                ping(bot)
                 url = f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
                 params = {
                     'key': bot.api_key
@@ -274,3 +270,7 @@ async def delete_sale_offers(bot, on_sale_items: List[Item]):
             if not success:
                 asyncio.sleep(10)
         item.state = 'for_sale'
+
+
+
+

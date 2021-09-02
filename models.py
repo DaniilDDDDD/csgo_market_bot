@@ -11,6 +11,7 @@ class Bot(ormar.Model):
         database = database
 
     id: int = ormar.Integer(primary_key=True)
+    description: Optional[str] = ormar.Text()
 
     '''
     "created", "active",  "paused", "destroyed", "sell", "buy"
@@ -19,10 +20,6 @@ class Bot(ormar.Model):
     state_check_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
     last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
-    
-    # баланс в копейках
-    balance: int = ormar.Integer()
-    description: Optional[str] = ormar.Text()
 
     api_key: str = ormar.String(nullable=False, unique=True)
     username: str = ormar.String(nullable=False, unique=True)
@@ -80,3 +77,4 @@ class Item(ormar.Model):
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)
 
+    trade_url: str = ormar.String(nullable=True)
