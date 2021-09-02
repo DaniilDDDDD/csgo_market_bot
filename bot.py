@@ -46,7 +46,9 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
         response = requests.get(url=url, params={'key': bot.api_key}).json()
 
         if response.get('success', False):
+
             for item in response.get('items'):
+
                 group = await ItemGroup.objects.get_or_create(
                     state='disabled',
                     bot=bot,
@@ -147,7 +149,7 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
 async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item]):
     '''
     Выставление предмета на продажу.
-    У предметов (Item) должен быть id
+    У предметов (Item) должен быть id, так как они присутствуют в инвентаре.
     '''
     for item in items_untradable:
         if (dt.now() - item.trade_timestamp) > trade_lock_delta:
@@ -270,7 +272,3 @@ async def delete_sale_offers(bot, on_sale_items: List[Item]):
             if not success:
                 asyncio.sleep(10)
         item.state = 'for_sale'
-
-
-
-

@@ -76,5 +76,3 @@ class Item(ormar.Model):
     market_hash_name: str = ormar.String(nullable=True)
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)
-
-    trade_url: str = ormar.String(nullable=True)
