@@ -2,7 +2,7 @@ from typing import Optional
 import datetime
 
 import ormar
-from .database import database, metadata
+from ..database import database, metadata
 
 
 class Bot(ormar.Model):
@@ -24,7 +24,7 @@ class Bot(ormar.Model):
     api_key: str = ormar.String(nullable=False, unique=True)
     username: str = ormar.String(nullable=False, unique=True)
     password: str = ormar.String(nullable=False)
-    steamguard_file: str = ormar.String(nullable=False, unique=True)
+    steamguard_file = ormar.String(nullable=False, unique=True)
 
 
 class ItemGroup(ormar.Model):
@@ -49,7 +49,6 @@ class ItemGroup(ormar.Model):
     sell_count: int = ormar.Integer(nullable=False, minimum=0, default=0)
 
 
-
 # конкретный предмет
 class Item(ormar.Model):
     class Meta:
@@ -72,7 +71,7 @@ class Item(ormar.Model):
     sell_for: int = ormar.Integer(nullable=True, minimum=1)
 
     # Данные маркета
-    market_id: int = ormar.Integer(nullable=True)
+    market_id: int = ormar.Integer(nullable=True, unique=True)
     market_hash_name: str = ormar.String(nullable=True)
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)

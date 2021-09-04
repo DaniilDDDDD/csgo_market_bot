@@ -4,13 +4,12 @@ import requests
 from typing import List
 from dotenv import load_dotenv
 from datetime import datetime as dt, timedelta as delta
-from steampy.client import SteamClient
 
 from .models import Bot, Item, ItemGroup
 
 load_dotenv()
 
-state_check_delta = delta(minutes=os.getenv('STATE_CHECK_TIMEDELTA'))
+state_check_delta = delta(minutes=os.environ.get('STATE_CHECK_TIMEDELTA'))
 trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
 
@@ -33,6 +32,20 @@ async def bot_state(bot: Bot) -> bool:
         bot.state_check_timestamp = dt.now()
     return bot.state
 
+async def send_request_until_success(bot: Bot, url: str, params: dict = {}):
+    success = False
+    response = {}
+    if 'key' not in params:
+            params['key'] = bot.api_key
+    while not success:
+        ping(bot)
+        response = requests.get(url=url, params=params).json()
+        success = response.get('success', False)
+        if not success:
+            await asyncio.sleep(10)
+    return response
+        
+
 
 async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 'hold'):
     '''
@@ -40,43 +53,38 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
     Если current_items == "hold", то предметы не учавствуют в торгах и назодятся "на удержании".
     Если current_items == "for_sale" то предметы учавствуют в торгах если есть возможность их обменивать.
     '''
-    success = False
-    while not success:
-        url = 'https://market.csgo.com/api/v2/my-inventory/'
-        response = requests.get(url=url, params={'key': bot.api_key}).json()
 
-        if response.get('success', False):
+    response = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/my-inventory/'
+    )
+    for item in response.get('items'):
 
-            for item in response.get('items'):
+        group = await ItemGroup.objects.get_or_create(
+            state='disabled',
+            bot=bot,
+            market_hash_name=item.get('market_hash_name', ''),
+            classid=item.get('classid'),
+            instanceid=item.get('instanceid')
+        )
 
-                group = await ItemGroup.objects.get_or_create(
-                    state='disabled',
-                    bot=bot,
-                    market_hash_name=item.get('market_hash_name', ''),
-                    classid=item.get('classid'),
-                    instanceid=item.get('instanceid')
-                )
-            
-                state = use_current_items
-                trade_timestamp = dt.now() - trade_lock_delta
-                if item.get('tradable', 0) != 1 and state == 'for_sale':
-                    state = 'untradable'
-                    trade_timestamp = dt.now()
-                elif item.get('tradable', 0) != 1 and state == 'hold':
-                    trade_timestamp = dt.now()
+        state = use_current_items
+        trade_timestamp = dt.now() - trade_lock_delta
+        if item.get('tradable', 0) != 1 and state == 'for_sale':
+            state = 'untradable'
+            trade_timestamp = dt.now()
+        elif item.get('tradable', 0) != 1 and state == 'hold':
+            trade_timestamp = dt.now()
 
-                skin = await Item.objects.get_or_create(
-                    state=state,
-                    item_group=group,
-                    market_id=item.get('id'),
-                    market_hash_name=item.get('market_hash_name', ''),
-                    classid=item.get('classid'),
-                    instanceid=item.get('instanceid'),
-                    trade_timestamp=trade_timestamp
-                )
-        success = response.get('success', False)
-        if not success:
-            asyncio.sleep(10)
+        skin = await Item.objects.get_or_create(
+            state=state,
+            item_group=group,
+            market_id=item.get('id'),
+            market_hash_name=item.get('market_hash_name', ''),
+            classid=item.get('classid'),
+            instanceid=item.get('instanceid'),
+            trade_timestamp=trade_timestamp
+        )
         
 
 
@@ -157,21 +165,18 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
             items_for_sale.append(item)
     
     for item in items_for_sale:
-        success = False
-        while not success:
-            ping(bot)
-            url = 'https://market.csgo.com/api/v2/add-to-sale'
-            params = {
-                'key': bot.api_key,
+
+        await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/add-to-sale',
+            {
                 'id': item.market_id,
                 'price': item.sell_for,
                 'cur': 'RUB'
-                }
-            response = requests.get(url=url, params=params).json()
-            success = response.get('success', False)
-            if not success:
-                asyncio.sleep(10)
+            }
+        )
         item.state = 'on_sale'
+
 
 async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     '''Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег'''
@@ -179,17 +184,10 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
 
         item = items_for_buy[0]
 
-        success = False
-        while not success:
-            if bot_balance(bot) - item.buy_for >= 10:
-                ping(bot)
-                url = f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
-                params = {
-                    'key': bot.api_key
-                }
-                success = requests.get(url=url, params=params).json().get('success', False)
-                if not success:
-                    asyncio.sleep(10)
+        await send_request_until_success(
+            bot,
+            f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
+        )
         item.state = 'ordered'
 
 
@@ -245,30 +243,25 @@ async def buy_group(bot: Bot, group: ItemGroup):
 async def delete_orders(bot: Bot, ordered_items: List[Item]):
 
     for item in ordered_items:
-        success = False
-        while not success:
-            url = f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/'
-            success = requests.get(url=url,  params = {'key': bot.api_key}).json().get('success', False)
-            if not success:
-                asyncio.sleep(10)
+
+        await send_request_until_success(
+            bot,
+            f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/'
+        )
         item.state = 'for_buy'
 
 
 async def delete_sale_offers(bot, on_sale_items: List[Item]):
     
     for item in on_sale_items:
-        success = False
-        while not success:
-            ping(bot)
-            url = 'https://market.csgo.com/api/v2/set-price'
 
-            params = {
-                'key': bot.api_key,
+        await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/set-price',
+            {
                 'price': 0,
                 'item_id': item.market_id,
                 'cur': 'RUB'
             }
-            success = requests.get(url=url, params=params).json().get('success', False)
-            if not success:
-                asyncio.sleep(10)
+        )
         item.state = 'for_sale'

@@ -1,13 +1,11 @@
 import asyncio
-import requests
 from typing import List
-from sqlalchemy.sql.elements import Null
 
 from steampy.client import SteamClient
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work
+from .bot import bot_work, send_request_until_success
 
 
 async def bots_states_check():
@@ -68,8 +66,6 @@ async def bot_buy(bot: Bot):
         group.state = 'buy'
 
 
-
-
 steam_clients = {}
 
 def get_bot_steam_client(bot: Bot) -> SteamClient:
@@ -93,7 +89,13 @@ async def trades_confirmation():
     '''
     while True:
         bots = await Bot.objects.exclude(state='destroyed').all()
-        pass
+        tasks = []
+        for bot in bots:
+            tasks.append(asyncio.create_task(give_items(bot)))
+            tasks.append(asyncio.create_task(take_items(bot)))
+
+        for task in tasks:
+            await task
 
 
 async def give_items(bot: Bot):
@@ -102,17 +104,10 @@ async def give_items(bot: Bot):
     '''
     while True:
         
-        success = False
-        response = ''
-        while not success:
-            url = 'https://market.csgo.com/api/v2/trade-request-give'
-            params = {
-                'key': bot.api_key
-            }
-            response = requests.get(url=url, params=params).json()
-            success = response.get('success', False)
-            if not success:
-                await asyncio.sleep(10)
+        response = await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/trade-request-give'
+        )
 
         steam_client = get_bot_steam_client(bot)
         try:
@@ -120,22 +115,16 @@ async def give_items(bot: Bot):
             steam_client.accept_trade_offer(response.get('trade', ''))
 
             # обновляем инвентарь
-            success = False
-            response = ''
-            while not success:
-                url = 'https://market.csgo.com/api/v2/update-inventory/'
-                params = {
-                    'key': bot.api_key
-                }
-                response = requests.get(url=url, params=params).json()
-                success = response.get('success', False)
-                if not success:
-                    await asyncio.sleep(10)
+
+            await send_request_until_success(
+                bot,
+                'https://market.csgo.com/api/v2/update-inventory/'
+            )
 
         except Exception:
             continue
 
-        items = Item.objects.filter(market_id__in=response.get('items', [])).all()
+        items = await Item.objects.filter(market_id__in=response.get('items', [])).all()
 
         for item in items:
             item.market_id = None
@@ -146,52 +135,66 @@ async def give_items(bot: Bot):
 
 async def take_items(bot: Bot):
     '''
-    Принимаем от бота купленныен нами вещи.
+    Принимаем от бота купленнын нами вещи.
     '''
     while True:
 
-        success = False
-        response = ''
-        while not success:
-            url = 'https://market.csgo.com/api/v2/trade-request-take'
-            params = {
-                'key': bot.api_key
-            }
-            response = requests.get(url=url, params=params).json()
-            success = response.get('success', False)
-            if not success:
-                await asyncio.sleep(10)
+        inventory_before_update = await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/my-inventory/'
+        ).get('items', [])
+
+        await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/trade-request-take'
+        )
         
         steam_client = get_bot_steam_client(bot)
+        response = {}
         try:
             # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
             steam_client.accept_trade_offer(response.get('trade', ''))
 
             # обновляем инвентарь
-            success = False
-            response = ''
-            while not success:
-                url = 'https://market.csgo.com/api/v2/update-inventory/'
-                params = {
-                    'key': bot.api_key
-                }
-                response = requests.get(url=url, params=params).json()
-                success = response.get('success', False)
-                if not success:
-                    await asyncio.sleep(10)
+            response = await send_request_until_success(
+                bot,
+                'https://market.csgo.com/api/v2/update-inventory/'
+            )
 
         except Exception:
             continue
             
-        await update_bought_items(response.get('items', []))
+        await update_bought_items(bot, response.get('items', []), inventory_before_update)
 
         await asyncio.sleep(60)
 
 
-async def update_bought_items(items: List[str]):
-    
-    for elem in items:
-        class_id, instance_id = elem.partition('_')[0], elem.partition('_')[2]
+async def update_bought_items(bot: Bot, items: List[str], inventory_before_update: List[dict]):
+    '''
+    Проставляем market_id и market_hash_name для каждой полученной вещи (Item).
+    Обновляем статусы.
+    '''
 
-        item = Item.objects.filter(class_id=class_id).filter(instance_id=instance_id).all()
-        pass
+    inventory = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/my-inventory/'
+    ).get('items', [])
+    
+    for elem in inventory:
+        for e in inventory_before_update:
+            if e['id'] == elem['id']:
+                elem = None           
+
+    added_items = [item for item in inventory if item is not None]              
+
+    for elem in items:
+        class_id, instance_id = int(elem.partition('_')[0]), int(elem.partition('_')[2])
+
+        # объект единственный так как более одной вещи за раз заказать нельзя
+        item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(instance_id=instance_id).first()
+
+        for i in range(len(added_items)):
+            if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:
+                item.market_id = added_items[i]['id']
+                item.market_hash_name = added_items[i]['market_hash_name']
+                added_items.pop(i)
