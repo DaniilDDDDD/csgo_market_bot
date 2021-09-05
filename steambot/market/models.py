@@ -2,7 +2,7 @@ from typing import Optional
 import datetime
 
 import ormar
-from ..database import database, metadata
+from core.database import database, metadata
 
 
 class Bot(ormar.Model):

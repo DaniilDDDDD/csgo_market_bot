@@ -1,6 +1,7 @@
-from .database import database, metadata, engine
 import asyncio
 import pathlib
+
+from core.database import database, metadata, engine
 
 from market.background_tasks import trades_confirmation, bots_states_check
 

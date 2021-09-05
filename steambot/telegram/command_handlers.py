@@ -1,10 +1,11 @@
 import os
 import json
 import pathlib
+import asyncio
 
 from telegram.ext import CommandHandler
 
-from ..main import basedir
+from core.main import basedir
 
 from market.models import Bot, ItemGroup, Item
 
@@ -38,6 +39,7 @@ def create_bot(update, context):
     steamid: str,
     shared_secret: str,
     identity_secret: str
+    description: Optional[str]
     Последние три агрумента сохраняются в файл в папку steam_guards/, а название в формате steam_guard_<steam_id>.json
     """
 
@@ -45,9 +47,9 @@ def create_bot(update, context):
         api_key: str,
         username: str,
         password: str,
-        steamguard_file: str
-    ):
-
+        steamguard_file: str,
+        description: str = None
+    ) -> Bot:
         bot = await Bot.objects.get_or_create(
             api_key=api_key,
             username=username,
@@ -55,16 +57,43 @@ def create_bot(update, context):
             steamguard_file=steamguard_file,
             state='created'
         )
+        if not description is None:
+            bot.description = description
+
+        return bot
+
+    arguments = {
+        'api_key': '',
+        'username': '',
+        'password': '',
+        'steamid': '',
+        'shared_secret': '',
+        'identity_secret': '',
+        'description': 'Some csgomarket bot.'
+    }
+
+    for arg in context.args:
+        key_value = arg.partition('=')
+        key, value = key_value[0], key_value[2]
+        arguments[key]=value
+
 
     data = {
-        "steamid": context.args[3],
-        "shared_secret": context.args[4],
-        "identity_secret": context.args[5]
+        "steamid": arguments['steamid'],
+        "shared_secret": arguments['shared_secret'],
+        "identity_secret": arguments['identity_secret']
     }
-    with open(f"{basedir}/steamguards/steam_guard_{context.args[3]}.json", "w", encoding="utf-8") as file:
+    with open(f"{basedir}/steamguards/steam_guard_{arguments['steamid']}.json", "w", encoding="utf-8") as file:
         json.dump(data, file)
+    
 
+    bot = asyncio.run(create_bot_in_db(
+        api_key=arguments['api_key'],
+        username=arguments['username'],
+        password=arguments['password'],
+        steamguard_file=f"{basedir}/steamguards/steam_guard_{arguments['steamid']}.json",
+        description=arguments['description']
+    ))
 
-
-    context.bot.send_message(chat_id=update.effective_chat.id, text=context.args)
-test_handler = CommandHandler('create_bot', create_bot)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=bot.dict())
+create_bot_handler = CommandHandler('create_bot', create_bot)

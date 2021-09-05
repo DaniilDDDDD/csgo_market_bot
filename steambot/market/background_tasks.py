@@ -144,13 +144,12 @@ async def take_items(bot: Bot):
             'https://market.csgo.com/api/v2/my-inventory/'
         ).get('items', [])
 
-        await send_request_until_success(
+        response = await send_request_until_success(
             bot,
             'https://market.csgo.com/api/v2/trade-request-take'
         )
         
         steam_client = get_bot_steam_client(bot)
-        response = {}
         try:
             # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
             steam_client.accept_trade_offer(response.get('trade', ''))

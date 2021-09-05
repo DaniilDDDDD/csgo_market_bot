@@ -3,3 +3,4 @@ steam_guards/
 .env
 
 test_async.py
+test_set.py
