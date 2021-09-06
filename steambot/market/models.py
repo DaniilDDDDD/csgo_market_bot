@@ -43,12 +43,6 @@ class ItemGroup(ormar.Model):
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)
 
-    # покупать столько...
-    buy_count: int = ormar.Integer(nullable=False, minimum=0, default=0)
-
-    # продавать столько...
-    sell_count: int = ormar.Integer(nullable=False, minimum=0, default=0)
-
 
 # конкретный предмет
 class Item(ormar.Model):

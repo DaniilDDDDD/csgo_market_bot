@@ -103,7 +103,7 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
 #     steam_client.logout()
 
 async def bot_work(bot: Bot):
-    """Проверка бота на кативность происходит в главном потоке, при получении из базы"""
+    """Проверка бота на ативность происходит в главном потоке, при получении из базы"""
     item_groups = await ItemGroup.objects.filter(bot=bot).exclude(state='disabled').all()
     tasks = [asyncio.create_task(bot_round_group(bot, item_group)) for item_group in item_groups]
     for task in tasks:

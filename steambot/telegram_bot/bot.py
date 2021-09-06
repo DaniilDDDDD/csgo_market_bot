@@ -9,7 +9,8 @@ from core.database import database, metadata, engine
 
 from telegram_bot.command_handlers import (
     start_handler, help_handler,
-    create_bot_handler, set_bot_status_handler
+    create_bot_handler, set_bot_status_handler, create_item_group_handler,
+    set_item_group_state_handler
 )
 
 load_dotenv()
@@ -28,6 +29,8 @@ dispatcher.add_handler(start_handler)
 dispatcher.add_handler(help_handler)
 dispatcher.add_handler(create_bot_handler)
 dispatcher.add_handler(set_bot_status_handler)
+dispatcher.add_handler(create_item_group_handler)
+dispatcher.add_handler(set_item_group_state_handler)
 
 
 async def database_connect(db: Database):
