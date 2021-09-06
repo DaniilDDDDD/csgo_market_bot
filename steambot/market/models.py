@@ -11,20 +11,21 @@ class Bot(ormar.Model):
         database = database
 
     id: int = ormar.Integer(primary_key=True)
-    description: Optional[str] = ormar.Text()
+    description: Optional[str] = ormar.Text(nullable=True)
 
-    '''
-    "created", "active",  "paused", "destroyed", "sell", "buy"
-    '''
-    state: str = ormar.String(nullable=False)
+    """
+    'created', 'in_circle', 'paused', 'destroyed', 'sell', 'buy'
+    """
+
+    state: str = ormar.String(nullable=False, max_length=100)
     state_check_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
     last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
-    api_key: str = ormar.String(nullable=False, unique=True)
-    username: str = ormar.String(nullable=False, unique=True)
-    password: str = ormar.String(nullable=False)
-    steamguard_file = ormar.String(nullable=False, unique=True)
+    api_key: str = ormar.String(nullable=False, unique=True, max_length=1000)
+    username: str = ormar.String(nullable=False, unique=True, max_length=300)
+    password: str = ormar.String(nullable=False, max_length=300)
+    steamguard_file: str = ormar.String(nullable=False, unique=True, max_length=300)
 
 
 class ItemGroup(ormar.Model):
@@ -34,11 +35,11 @@ class ItemGroup(ormar.Model):
 
     id: int = ormar.Integer(primary_key=True)
 
-    state: str = ormar.String(nullable=False)
+    state: str = ormar.String(nullable=False, max_length=100)
 
     bot: Bot = ormar.ForeignKey(Bot, nullable=False)
 
-    market_hash_name: str = ormar.String(nullable=True)
+    market_hash_name: str = ormar.String(nullable=True, max_length=1000)
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)
 
@@ -57,7 +58,7 @@ class Item(ormar.Model):
 
     id: int = ormar.Integer(primary_key=True)
 
-    state: str = ormar.String(nullable=False)
+    state: str = ormar.String(nullable=False, max_length=100)
 
     item_group: ItemGroup = ormar.ForeignKey(ItemGroup, nullable=False)
 
@@ -72,6 +73,6 @@ class Item(ormar.Model):
 
     # Данные маркета
     market_id: int = ormar.Integer(nullable=True, unique=True)
-    market_hash_name: str = ormar.String(nullable=True)
+    market_hash_name: str = ormar.String(nullable=True, max_length=1000)
     classid: int = ormar.Integer(nullable=True)
     instanceid: int = ormar.Integer(nullable=True)

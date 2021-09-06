@@ -9,7 +9,7 @@ from .bot import bot_work, send_request_until_success
 
 
 async def bots_states_check():
-    '''
+    """
     Отсюда происходит запуск раскручивания ботов:
     Если у бота статус 'in_circle' или 'paused', то его не трогаем;
     Если у бота статус 'circle_ended', то запускаем его следующий оборот;
@@ -17,7 +17,7 @@ async def bots_states_check():
     Если у бота статус 'destroyed', то бот удаляется из базы данных вместе с его группами предметов;
     Если у бота статус 'sell', то у всех его групп предметов ставится статус 'sell';
     Если у бота статус 'buy', то у всех его групп предметов ставится статус 'buy'.
-    '''
+    """
     while True:
 
         bots = await Bot.objects.exclude(state__in=['in_circle', 'paused']).all()
@@ -41,11 +41,10 @@ async def bots_states_check():
 
             if bot.state == 'destroyed':
                 tasks.append(asyncio.create_task(bot_delete(bot)))
-            
+
         for task in tasks:
             await task
-                
-            
+
 
 async def bot_delete(bot: Bot):
     steam_client = get_bot_steam_client(bot)
@@ -55,10 +54,12 @@ async def bot_delete(bot: Bot):
     await ItemGroup.objects.delete(bot=bot)
     await bot.delete()
 
+
 async def bot_sell(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).all()
     for group in groups:
         group.state = 'sell'
+
 
 async def bot_buy(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).all()
@@ -67,6 +68,7 @@ async def bot_buy(bot: Bot):
 
 
 steam_clients = {}
+
 
 def get_bot_steam_client(bot: Bot) -> SteamClient:
     if bot.id in steam_clients:
@@ -103,7 +105,7 @@ async def give_items(bot: Bot):
     Отдаём боту маркета купленные у нас вещи.
     '''
     while True:
-        
+
         response = await send_request_until_success(
             bot,
             'https://market.csgo.com/api/v2/trade-request-give'
@@ -148,7 +150,7 @@ async def take_items(bot: Bot):
             bot,
             'https://market.csgo.com/api/v2/trade-request-take'
         )
-        
+
         steam_client = get_bot_steam_client(bot)
         try:
             # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
@@ -162,7 +164,7 @@ async def take_items(bot: Bot):
 
         except Exception:
             continue
-            
+
         await update_bought_items(bot, response.get('items', []), inventory_before_update)
 
         await asyncio.sleep(60)
@@ -178,19 +180,20 @@ async def update_bought_items(bot: Bot, items: List[str], inventory_before_updat
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
     ).get('items', [])
-    
+
     for elem in inventory:
         for e in inventory_before_update:
             if e['id'] == elem['id']:
-                elem = None           
+                elem = None
 
-    added_items = [item for item in inventory if item is not None]              
+    added_items = [item for item in inventory if item is not None]
 
     for elem in items:
         class_id, instance_id = int(elem.partition('_')[0]), int(elem.partition('_')[2])
 
         # объект единственный так как более одной вещи за раз заказать нельзя
-        item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(instance_id=instance_id).first()
+        item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(
+            instance_id=instance_id).first()
 
         for i in range(len(added_items)):
             if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:

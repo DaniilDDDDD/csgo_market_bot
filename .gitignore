@@ -1,6 +1,7 @@
 
-steam_guards/
-.env
+/steambot/steam_guards
+/steambot/.env
 
-test_async.py
-test_set.py
+
+/steambot/set_test.py
+/steambot/telegram_bot/sqlite.db

@@ -1,14 +1,13 @@
 import asyncio
-import pathlib
+from databases import Database
 
 from core.database import database, metadata, engine
 
 from market.background_tasks import trades_confirmation, bots_states_check
 
-basedir = pathlib.Path(__file__).parent.resolve()
 
 async def main():
-    '''Все асинхронные задачи'''
+    """Все асинхронные задачи"""
     task_trades = asyncio.create_task(trades_confirmation())
     task_states_check = asyncio.create_task(bots_states_check())
 
@@ -16,10 +15,20 @@ async def main():
     await task_states_check
 
 
+async def database_connect(db: Database):
+    if not db.is_connected:
+        await db.connect()
+
+
+async def database_disconnect(db: Database):
+    if db.is_connected:
+        await db.disconnect()
+
+
 if __name__ == '__main__':
-    '''Инициализация базы данных'''
+    """Инициализация базы данных"""
     metadata.create_all(engine)
     database.connect()
     # запуск параллельных задач
     asyncio.run(main())
-    database.disconnect()
+    # database.disconnect()

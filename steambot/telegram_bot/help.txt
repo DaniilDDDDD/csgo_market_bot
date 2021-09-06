@@ -1,0 +1,17 @@
+Documentation of MudaMudBot:
+
+/create_bot
+    Создание бота.
+    Принимать аргументы в виде '<key>=<value>'.
+    Аргументы:
+    api_key: str,
+    username: str,
+    password: str,
+    steamid: str,
+    shared_secret: str,
+    identity_secret: str
+    description: Optional[str]
+
+/delete_bot
+    Удаление бота.
+    Принимает один один аргумент (id бота) <id>=<value>.
