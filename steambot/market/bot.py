@@ -78,7 +78,7 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
         elif item.get('tradable', 0) != 1 and state == 'hold':
             trade_timestamp = dt.now()
 
-        skin = await Item.objects.get_or_create(
+        await Item.objects.get_or_create(
             state=state,
             item_group=group,
             market_id=item.get('id'),
@@ -141,12 +141,17 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
     if group.state == 'sell':
         task_sell_all = asyncio.create_task(sell_group(bot, group))
         await task_sell_all
-        group.state = 'disabled'
+        await group.update(state='disabled')
 
     if group.state == 'buy':
         task_buy_all = asyncio.create_task(buy_group(bot, group))
         await task_buy_all
-        group.state = 'disabled'
+        await group.update(state='disabled')
+
+    if group.state == 'hold':
+        task_hold_all = asyncio.create_task(hold_group(bot, group))
+        await task_hold_all
+        await group.update(state='disabled')
 
     bot.state = 'circle_ended'
 
@@ -158,7 +163,7 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
     """
     for item in items_untradable:
         if (dt.now() - item.trade_timestamp) > trade_lock_delta:
-            item.state = 'for_sale'
+            await item.update(state='for_sale')
             items_for_sale.append(item)
 
     for item in items_for_sale:
@@ -171,7 +176,7 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
                 'cur': 'RUB'
             }
         )
-        item.state = 'on_sale'
+        await item.update(state='on_sale')
 
 
 async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
@@ -183,7 +188,7 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             bot,
             f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
         )
-        item.state = 'ordered'
+        await item.update(state='ordered')
 
 
 async def sell_group(bot: Bot, group: ItemGroup):
@@ -234,13 +239,41 @@ async def buy_group(bot: Bot, group: ItemGroup):
     await task_delete_sale_offers
 
 
+async def hold_group(bot: Bot, group: ItemGroup):
+    items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
+    items = {
+        'ordered': [],
+        'untradable': [],
+        'for_buy': [],
+        'for_sale': [],
+        'on_sale': []
+    }
+    for item in items_list:
+        items[item.state].append(item)
+
+    task_delete_sale_offers = asyncio.create_task(delete_sale_offers(
+        bot, items['on_sale']
+    ))
+
+    task_delete_orders = asyncio.create_task(delete_orders(
+        bot, items['ordered']
+    ))
+
+    await task_delete_orders
+    await task_delete_sale_offers
+
+    for item in items_list:
+        if item.state != 'untradable':
+            await item.update(state='hold')
+
+
 async def delete_orders(bot: Bot, ordered_items: List[Item]):
     for item in ordered_items:
         await send_request_until_success(
             bot,
             f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/'
         )
-        item.state = 'for_buy'
+        await item.update(state='for_buy')
 
 
 async def delete_sale_offers(bot, on_sale_items: List[Item]):
@@ -254,4 +287,20 @@ async def delete_sale_offers(bot, on_sale_items: List[Item]):
                 'cur': 'RUB'
             }
         )
-        item.state = 'for_sale'
+        await item.update(state='for_sale')
+
+
+async def hold_item(item: Item):
+    if item.state == 'untradable':
+        return
+    elif item.state == 'ordered':
+        task_delete_order = asyncio.create_task(delete_orders(
+            item.item_group.bot, [item]
+        ))
+        await task_delete_order
+    elif item.state == 'on_sale':
+        task_delete_offer = asyncio.create_task(delete_sale_offers(
+            item.item_group.bot, [item]
+        ))
+        await task_delete_offer
+    await item.update(state='hold')

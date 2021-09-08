@@ -7,6 +7,8 @@ from .models import Bot, Item, ItemGroup
 
 from .bot import bot_work, send_request_until_success
 
+steam_clients = {}
+
 
 async def bots_states_check():
     """
@@ -30,14 +32,18 @@ async def bots_states_check():
 
             if bot.state == 'sell':
                 tasks.append(asyncio.create_task(bot_sell(bot)))
-                bot.state = 'paused'
+                await bot.update(state='paused')
 
             if bot.state == 'buy':
                 tasks.append(asyncio.create_task(bot_buy(bot)))
-                bot.state = 'paused'
+                await bot.update(state='paused')
+
+            if bot.state == 'hold':
+                tasks.append(asyncio.create_task(bot_hold(bot)))
+                await bot.update(state='paused')
 
             if bot.state == 'destroy':
-                bot.state = 'destroyed'
+                await bot.update(state='destroyed')
 
             if bot.state == 'destroyed':
                 tasks.append(asyncio.create_task(bot_delete(bot)))
@@ -49,6 +55,7 @@ async def bots_states_check():
 async def bot_delete(bot: Bot):
     steam_client = get_bot_steam_client(bot)
     steam_client.logout()
+    steam_clients.pop(bot.id)
     groups = await ItemGroup.objects.filter(bot=bot).all()
     await Item.objects.delete(item_group__in=groups)
     await ItemGroup.objects.delete(bot=bot)
@@ -58,19 +65,26 @@ async def bot_delete(bot: Bot):
 async def bot_sell(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).all()
     for group in groups:
-        group.state = 'sell'
+        await group.update(state='sell')
 
 
 async def bot_buy(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).all()
     for group in groups:
-        group.state = 'buy'
+        await group.update(state='buy')
 
 
-steam_clients = {}
+async def bot_hold(bot: Bot):
+    groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).all()
+    for group in groups:
+        await group.update(state='hold')
 
 
 def get_bot_steam_client(bot: Bot) -> SteamClient:
+    """
+    Получение steam-клиента, работающего с данными бота.
+    """
+
     if bot.id in steam_clients:
         return steam_clients[bot.id]
     else:
@@ -85,10 +99,11 @@ def get_bot_steam_client(bot: Bot) -> SteamClient:
 
 
 async def trades_confirmation():
-    '''
+    """
     Проход по всем Item и подтверждение обмена при наличии ссылки на обмен.
     Ссылка не трейд не нужна, так как бот маркета сам предлагает обмен.
-    '''
+    """
+
     while True:
         bots = await Bot.objects.exclude(state='destroyed').all()
         tasks = []
@@ -101,9 +116,10 @@ async def trades_confirmation():
 
 
 async def give_items(bot: Bot):
-    '''
+    """
     Отдаём боту маркета купленные у нас вещи.
-    '''
+    """
+
     while True:
 
         response = await send_request_until_success(
@@ -129,16 +145,15 @@ async def give_items(bot: Bot):
         items = await Item.objects.filter(market_id__in=response.get('items', [])).all()
 
         for item in items:
-            item.market_id = None
-            item.state = 'for_buy'
+            await item.update(state='for_buy', market_id=None)
 
         await asyncio.sleep(60)
 
 
 async def take_items(bot: Bot):
-    '''
+    """
     Принимаем от бота купленнын нами вещи.
-    '''
+    """
     while True:
 
         inventory_before_update = await send_request_until_success(
@@ -171,10 +186,10 @@ async def take_items(bot: Bot):
 
 
 async def update_bought_items(bot: Bot, items: List[str], inventory_before_update: List[dict]):
-    '''
+    """
     Проставляем market_id и market_hash_name для каждой полученной вещи (Item).
     Обновляем статусы.
-    '''
+    """
 
     inventory = await send_request_until_success(
         bot,
@@ -197,6 +212,8 @@ async def update_bought_items(bot: Bot, items: List[str], inventory_before_updat
 
         for i in range(len(added_items)):
             if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:
-                item.market_id = added_items[i]['id']
-                item.market_hash_name = added_items[i]['market_hash_name']
+                await item.update(
+                    market_id=added_items[i]['id'],
+                    market_hash_name=added_items[i]['market_hash_name']
+                )
                 added_items.pop(i)
