@@ -59,6 +59,10 @@ async def bot_delete(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).all()
     await Item.objects.delete(item_group__in=groups)
     await ItemGroup.objects.delete(bot=bot)
+    await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/go-offline'
+    )
     await bot.delete()
 
 

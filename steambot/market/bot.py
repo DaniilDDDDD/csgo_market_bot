@@ -14,18 +14,12 @@ trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
 
 
-def ping(bot: Bot):
-    if (dt.now() - bot.last_ping_pong) >= ping_pong_delta:
-        success = False
-        while not success:
-            success = requests.get('https://market.csgo.com/api/v2/ping', params={'key': bot.api_key}).json().get(
-                'success', False)
-
-
 def bot_balance(bot: Bot):
-    bot.balance = requests.get('https://market.csgo.com/api/v2/get-money', params={'key': bot.api_key}).json().get(
-        'money', 0)
-    return bot.balance
+    response = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/get-money'
+    )
+    return response.get('money', 0)
 
 
 async def bot_state(bot: Bot) -> str:
@@ -35,13 +29,27 @@ async def bot_state(bot: Bot) -> str:
     return bot.state
 
 
-async def send_request_until_success(bot: Bot, url: str, params: dict = {}):
+async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
+    async def ping(_bot: Bot):
+        if (dt.now() - _bot.last_ping_pong) >= ping_pong_delta:
+            pinged = False
+            while not pinged:
+                _response = requests.get(
+                    url='https://market.csgo.com/api/v2/get-money'
+                ).json()
+                pinged = _response.get('success', False)
+                if not pinged:
+                    await asyncio.sleep(10)
+
+    if params is None:
+        params = {}
+    if 'key' not in params:
+        params['key'] = bot.secret_key
+
     success = False
     response = {}
-    if 'key' not in params:
-        params['key'] = bot.api_key
     while not success:
-        ping(bot)
+        await ping(bot)
         response = requests.get(url=url, params=params).json()
         success = response.get('success', False)
         if not success:
@@ -113,7 +121,7 @@ async def bot_work(bot: Bot):
 
 # делает один оборот
 async def bot_round_group(bot: Bot, group: ItemGroup):
-    bot.state = 'in_circle'
+    await bot.update(state='in_circle')
 
     if group.state == 'active':
         items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
@@ -153,7 +161,11 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         await task_hold_all
         await group.update(state='disabled')
 
-    bot.state = 'circle_ended'
+    if group.state == 'delete':
+        task_delete_group = asyncio.create_task(delete_group(bot, group))
+        await task_delete_group
+
+    await bot.update(state='circle_ended')
 
 
 async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item]):
@@ -267,6 +279,33 @@ async def hold_group(bot: Bot, group: ItemGroup):
             await item.update(state='hold')
 
 
+async def delete_group(bot: Bot, group: ItemGroup):
+    items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
+    items = {
+        'ordered': [],
+        'untradable': [],
+        'for_buy': [],
+        'for_sale': [],
+        'on_sale': []
+    }
+    for item in items_list:
+        items[item.state].append(item)
+
+    task_delete_sale_offers = asyncio.create_task(delete_sale_offers(
+        bot, items['on_sale']
+    ))
+
+    task_delete_orders = asyncio.create_task(delete_orders(
+        bot, items['ordered']
+    ))
+
+    await task_delete_orders
+    await task_delete_sale_offers
+
+    await Item.objects.exclude(state='hold').delete(item_group=group)
+    await group.delete()
+
+
 async def delete_orders(bot: Bot, ordered_items: List[Item]):
     for item in ordered_items:
         await send_request_until_success(
@@ -304,3 +343,19 @@ async def hold_item(item: Item):
         ))
         await task_delete_offer
     await item.update(state='hold')
+
+
+async def delete_item(item: Item):
+    if item.state == 'hold':
+        return
+    if item.state == 'ordered':
+        task_delete_order = asyncio.create_task(delete_orders(
+            item.item_group.bot, [item]
+        ))
+        await task_delete_order
+    elif item.state == 'on_sale':
+        task_delete_offer = asyncio.create_task(delete_sale_offers(
+            item.item_group.bot, [item]
+        ))
+        await task_delete_offer
+    await item.delete()

@@ -22,6 +22,8 @@ class Bot(ormar.Model):
 
     last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
+    secret_key: set = ormar.String(nullable=False, unique=True, max_length=1000)
+
     api_key: str = ormar.String(nullable=False, unique=True, max_length=1000)
     username: str = ormar.String(nullable=False, unique=True, max_length=300)
     password: str = ormar.String(nullable=False, max_length=300)
@@ -68,7 +70,7 @@ class Item(ormar.Model):
 
     state: str = ormar.String(nullable=False, max_length=100)
 
-    item_group: ItemGroup = ormar.ForeignKey(ItemGroup, nullable=False)
+    item_group: ItemGroup = ormar.ForeignKey(ItemGroup, nullable=True)
 
     # начало задержки возможности обмена
     trade_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from telegram.ext import CommandHandler
 
 from market.models import Bot, ItemGroup, Item
-from market.bot import send_request_until_success, hold_item
+from market.bot import send_request_until_success, hold_item, delete_item
 
 load_dotenv()
 
@@ -121,7 +121,8 @@ def create_bot(update, context):
 /create_bot
     Создание бота.
     Аргументы:
-        <api_key>- api ключ аккаунта,
+        <secret_key> - секретный ключ маркета,
+        <api_key> - api ключ аккаунта,
         <username> - username аккаунта,
         <password> - password аккаунта,
         <steamid> - steamid аккаунта,
@@ -131,6 +132,7 @@ def create_bot(update, context):
     """
 
     async def create_bot_in_db(
+            secret_key: str,
             api_key: str,
             username: str,
             password: str,
@@ -138,6 +140,7 @@ def create_bot(update, context):
             description: str
     ) -> Bot:
         _bot = await Bot.objects.get_or_create(
+            secret_key=secret_key,
             api_key=api_key,
             username=username,
             password=password,
@@ -148,6 +151,7 @@ def create_bot(update, context):
         return _bot
 
     arguments = {
+        'secret_key': '--',
         'api_key': '--',
         'username': '--',
         'password': '--',
@@ -161,6 +165,7 @@ def create_bot(update, context):
         return
 
     bot = asyncio.run(create_bot_in_db(
+        secret_key=arguments['secret_key'],
         api_key=arguments['api_key'],
         username=arguments['username'],
         password=arguments['password'],
@@ -188,7 +193,7 @@ def set_bot_status(update, context):
         <state> - новый статус бота.
     """
 
-    async def change_bot_state_in_db(id: int, state: str):
+    async def change_bot_state_in_db(id: int, state: str) -> Bot:
         _bot = await Bot.objects.get(id=id)
         assert _bot
         await _bot.update(state=state)
@@ -439,6 +444,10 @@ def set_item_state(update, context):
 
     if arguments['state'] == 'hold':
         asyncio.run(hold_item(item))
+
+    if arguments['state'] == 'delete':
+        asyncio.run(delete_item(item))
+
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
 
 
