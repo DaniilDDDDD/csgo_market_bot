@@ -96,7 +96,7 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
             instanceid=item.get('instanceid'),
             trade_timestamp=trade_timestamp,
             sell_for=item.get('market_price'),
-            buy_for=(item.get('market_price') / 100) * 85
+            buy_for=item.get('market_price') * 0.85
         )
 
 

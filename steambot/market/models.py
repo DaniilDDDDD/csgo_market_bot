@@ -75,11 +75,14 @@ class Item(ormar.Model):
     # начало задержки возможности обмена
     trade_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
+    # продавать за...
+    sell_for: int = ormar.Integer(nullable=True, minimum=1)
+
     # покупать за...
     buy_for: int = ormar.Integer(nullable=True, minimum=1)
 
-    # продавать за...
-    sell_for: int = ormar.Integer(nullable=True, minimum=1)
+    # цена заказа
+    ordered_for: int = ormar.Integer(nullable=True, default=buy_for, minimum=1)
 
     # Данные маркета
     market_id: int = ormar.Integer(nullable=True, unique=True)
@@ -90,7 +93,7 @@ class Item(ormar.Model):
     def __str__(self):
         return f"Market item id is {self.id}.\n" \
                f"Item state is {self.state}.\n" \
-               f"Item' market hash name is {self.market_hash_name}" \
+               f"Item's market hash name is {self.market_hash_name}" \
                f"Item belongs to group of items with id {self.item_group.id}.\n" \
                f"Item would be bought for {self.buy_for} and sold for {self.sell_for}.\n" \
                f"If item is bought it's id on market is {self.market_id}."

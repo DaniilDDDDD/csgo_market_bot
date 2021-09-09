@@ -5,7 +5,7 @@ from steampy.client import SteamClient
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work, send_request_until_success
+from .bot import bot_work, send_request_until_success, bot_balance
 
 steam_clients = {}
 
@@ -82,6 +82,34 @@ async def bot_hold(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).all()
     for group in groups:
         await group.update(state='hold')
+
+
+async def update_orders_price():
+    """
+    Обновление цен на автоматическую покупку предмета:
+    если появляется ордер от другого пользователя, который автоматически покупает предмет, но за большую сумму,
+    то обновляему ордер, чтобы наш был дороже, дабы ордер был удовлетворён ранее
+    """
+    items = await Item.objects.filter(state='ordered').all()
+
+    for item in items:
+
+        response = await send_request_until_success(
+            item.item_group.bot,
+            f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/'
+        )
+
+        if response.get('best_offer') > item.ordered_for \
+                and (response.get('best_offer') + 1) < item.sell_for * 0.90 \
+                and (response.get('best_offer') + 1) < await bot_balance(item.item_group.bot):
+            await send_request_until_success(
+                item.item_group.bot,
+                f'https://market.csgo.com/api/UpdateOrder/'
+                f'{item.classid}/{item.instanceid}/{response.get("best_offer") + 1}/'
+            )
+            await item.update(ordered_for=(response.get("best_offer") + 1))
+
+    await asyncio.sleep(10)
 
 
 def get_bot_steam_client(bot: Bot) -> SteamClient:
@@ -176,7 +204,7 @@ async def take_items(bot: Bot):
             steam_client.accept_trade_offer(response.get('trade', ''))
 
             # обновляем инвентарь
-            response = await send_request_until_success(
+            await send_request_until_success(
                 bot,
                 'https://market.csgo.com/api/v2/update-inventory/'
             )
@@ -213,6 +241,8 @@ async def update_bought_items(bot: Bot, items: List[str], inventory_before_updat
         # объект единственный так как более одной вещи за раз заказать нельзя
         item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(
             instance_id=instance_id).first()
+
+        await item.update(ordered_for=item.buy_for)
 
         for i in range(len(added_items)):
             if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:
