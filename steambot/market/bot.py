@@ -14,7 +14,7 @@ trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
 
 
-def bot_balance(bot: Bot):
+async def bot_balance(bot: Bot):
     response = await send_request_until_success(
         bot,
         'https://market.csgo.com/api/v2/get-money'
@@ -35,7 +35,8 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
             pinged = False
             while not pinged:
                 _response = requests.get(
-                    url='https://market.csgo.com/api/v2/get-money'
+                    url='https://market.csgo.com/api/v2/ping',
+                    params={'key': _bot.secret_key}
                 ).json()
                 pinged = _response.get('success', False)
                 if not pinged:
@@ -73,9 +74,9 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
         group = await ItemGroup.objects.get_or_create(
             state='disabled',
             bot=bot,
-            market_hash_name=item.get('market_hash_name', ''),
-            classid=item.get('classid'),
-            instanceid=item.get('instanceid')
+            market_hash_name=item.get('market_hash_name', None),
+            classid=item.get('classid', None),
+            instanceid=item.get('instanceid', None)
         )
 
         state = use_current_items
@@ -89,11 +90,13 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
         await Item.objects.get_or_create(
             state=state,
             item_group=group,
-            market_id=item.get('id'),
-            market_hash_name=item.get('market_hash_name', ''),
+            market_id=item.get('id', None),
+            market_hash_name=item.get('market_hash_name', None),
             classid=item.get('classid'),
             instanceid=item.get('instanceid'),
-            trade_timestamp=trade_timestamp
+            trade_timestamp=trade_timestamp,
+            sell_for=item.get('market_price'),
+            buy_for=(item.get('market_price') / 100) * 85
         )
 
 
@@ -196,11 +199,12 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     if not items_ordered:
         item = items_for_buy[0]
 
-        await send_request_until_success(
-            bot,
-            f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
-        )
-        await item.update(state='ordered')
+        if await bot_balance(bot) - item.buy_for >= 100:
+            await send_request_until_success(
+                bot,
+                f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
+            )
+            await item.update(state='ordered')
 
 
 async def sell_group(bot: Bot, group: ItemGroup):
