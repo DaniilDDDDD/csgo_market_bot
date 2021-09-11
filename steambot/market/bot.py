@@ -185,6 +185,7 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
         await item.update(state='on_sale')
 
 
+# working
 async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
     if not items_ordered:
