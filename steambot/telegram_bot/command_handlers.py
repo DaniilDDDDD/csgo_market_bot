@@ -52,10 +52,12 @@ def help(update, context):
     result += list_item_group.__doc__
     result += create_item_group.__doc__
     result += set_item_group_state.__doc__
+    result += set_item_group_price.__doc__
 
     result += list_item.__doc__
     result += add_item_to_group.__doc__
     result += set_item_state.__doc__
+    result += set_item_price.__doc__
 
     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
 
@@ -72,8 +74,8 @@ def market_bot_inventory(update, context):
         <id> - id бота.
     """
 
-    async def get_bot(id: int) -> Bot:
-        _bot = await Bot.objects.get(id=id)
+    async def get_bot(_id: int) -> Bot:
+        _bot = await Bot.objects.get(id=_id)
         assert _bot
         return _bot
 
@@ -258,7 +260,7 @@ def create_item_group(update, context):
             classid: int,
             instanceid: int,
             market_hash_name: str = '',
-            state: str = 'active'
+            state: str = 'disabled'
     ) -> ItemGroup:
         _bot = await Bot.objects.get(id=bot)
         assert _bot
@@ -274,6 +276,7 @@ def create_item_group(update, context):
             _item = await Item.objects.create(
                 item_group=_group,
                 buy_for=buy_for,
+                ordered_for=buy_for,
                 sell_for=sell_for,
                 state='for_buy',
                 market_hash_name=market_hash_name,
@@ -332,6 +335,52 @@ def set_item_group_state(update, context):
         return
 
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
+
+
+def set_item_group_price(update, context):
+    """
+/set_item_group_price
+    Установить новые цены на всех предметах группы.
+    Аргументы:
+        <item_group> - id группы предметов,
+        <buy_for> - цена покупки на маркете,
+        <sell_for> - цена продажи на маркете.
+    """
+
+    async def update_group_prices(
+            item_group: int,
+            **kwargs
+    ) -> ItemGroup:
+        _group = await ItemGroup.objects.get(id=item_group)
+        assert _group
+        _items = await Item.objects.filter(item_group=_group).all()
+        for item in _items:
+            await item.update(**kwargs)
+        return _group
+
+    arguments = {
+        'item_group': '--',
+        'buy_for': None,
+        'sell_for': None
+    }
+    arguments = check_args(context, update, arguments)
+    if not arguments:
+        return
+
+    try:
+
+        if arguments['buy_for'] is None:
+            arguments.pop('buy_for')
+        if arguments['sell_for'] is None:
+            arguments.pop('sell_for')
+
+        if 'buy_for' in arguments or 'sell_for' in arguments:
+            group = asyncio.run(update_group_prices(**arguments))
+            context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
+
+    except AssertionError:
+        context.bot.send_message(chat_id=update.effective_chat.id, text='Item group with this "id" does not exists!')
+        return
 
 
 def list_item(update, context):
@@ -438,6 +487,8 @@ def set_item_state(update, context):
     try:
         item = asyncio.run(Item.objects.get(id=arguments['id']))
         assert item
+        asyncio.run(item.update(state=arguments['state']))
+        assert item.state == arguments['state']
     except AssertionError:
         context.bot.send_message(chat_id=update.effective_chat.id, text='Item with this "id" does not exists!')
         return
@@ -447,6 +498,44 @@ def set_item_state(update, context):
 
     if arguments['state'] == 'delete':
         asyncio.run(delete_item(item))
+
+    context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
+
+
+def set_item_price(update, context):
+    """
+/set_item_price
+    Установка предмету новых цен продажи и покупки.
+    Принимает аргументы:
+        <id> - id предемета,
+        <buy_for> - цена покупки у маркета,
+        <sell_for> - продажи на маркете.
+    """
+    arguments = {
+        'id': '--',
+        'buy_for': None,
+        'sell_for': None
+    }
+    arguments = check_args(context, update, arguments)
+    if not arguments:
+        return
+
+    try:
+        item = asyncio.run(Item.objects.get(id=arguments['id']))
+        assert item
+
+        if arguments['buy_for'] is None:
+            arguments.pop('buy_for')
+        if arguments['sell_for'] is None:
+            arguments.pop('sell_for')
+
+        if 'buy_for' in arguments or 'sell_for' in arguments:
+            arguments.pop('id')
+            asyncio.run(item.update(**arguments))
+
+    except AssertionError:
+        context.bot.send_message(chat_id=update.effective_chat.id, text='Item with this "id" does not exists!')
+        return
 
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
 
@@ -462,7 +551,9 @@ set_bot_status_handler = CommandHandler('set_bot_status', set_bot_status)
 list_item_group_handler = CommandHandler('list_item_group', list_item_group)
 create_item_group_handler = CommandHandler('create_item_group', create_item_group)
 set_item_group_state_handler = CommandHandler('set_item_group_state', set_item_group_state)
+set_item_group_price_handler = CommandHandler('set_item_group_price', set_item_group_price)
 
 list_item_handler = CommandHandler('list_item', list_item)
 add_item_to_group_handler = CommandHandler('add_item_to_group', add_item_to_group)
 set_item_state_handler = CommandHandler('set_item_state', set_item_state)
+set_item_price_handler = CommandHandler('set_item_price', set_item_price)

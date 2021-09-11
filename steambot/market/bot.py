@@ -65,6 +65,11 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
     Если current_items == "for_sale" то предметы учавствуют в торгах если есть возможность их обменивать.
     """
 
+    await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/update-inventory/'
+    )
+
     response = await send_request_until_success(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
@@ -98,20 +103,6 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
             sell_for=item.get('market_price'),
             buy_for=item.get('market_price') * 0.85
         )
-
-
-# def bot_start(bot: Bot):
-#     '''Создание бота, но предметы в инвентаре отсутствуют в базе по умолчанию (а значит и не учавствуют в торгах))'''
-#     steam_client = SteamClient(bot.api_key)
-#     steam_client.login(
-#         bot.username,
-#         bot.password,
-#         bot.steamguard_file
-#     )
-#     return steam_client
-
-# def bot_stop(steam_client: SteamClient):
-#     steam_client.logout()
 
 async def bot_work(bot: Bot):
     """Проверка бота на ативность происходит в главном потоке, при получении из базы"""
@@ -199,11 +190,13 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     if not items_ordered:
         item = items_for_buy[0]
 
-        if await bot_balance(bot) - item.buy_for >= 100:
-            await send_request_until_success(
+        if await bot_balance(bot) * 100 - item.buy_for >= 100:
+            print('before request')
+            response = await send_request_until_success(
                 bot,
                 f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
             )
+            print(response)
             await item.update(state='ordered')
 
 

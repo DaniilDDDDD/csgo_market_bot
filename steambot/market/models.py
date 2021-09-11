@@ -1,5 +1,6 @@
 from typing import Optional
 import datetime
+from datetime import timedelta as delta
 
 import ormar
 from core.database import database, metadata
@@ -20,7 +21,7 @@ class Bot(ormar.Model):
     state: str = ormar.String(nullable=False, max_length=100)
     state_check_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
 
-    last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
+    last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now() - delta(minutes=3))
 
     secret_key: set = ormar.String(nullable=False, unique=True, max_length=1000)
 
@@ -82,7 +83,7 @@ class Item(ormar.Model):
     buy_for: int = ormar.Integer(nullable=True, minimum=1)
 
     # цена заказа
-    ordered_for: int = ormar.Integer(nullable=True, default=buy_for, minimum=1)
+    ordered_for: int = ormar.Integer(nullable=True, minimum=1)
 
     # Данные маркета
     market_id: int = ormar.Integer(nullable=True, unique=True)
