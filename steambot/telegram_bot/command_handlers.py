@@ -257,9 +257,9 @@ def create_item_group(update, context):
             amount: int,
             buy_for: int,
             sell_for: int,
-            classid: int,
-            instanceid: int,
-            market_hash_name: str = '',
+            classid: int = None,
+            instanceid: int = None,
+            market_hash_name: str = None,
             state: str = 'disabled'
     ) -> ItemGroup:
         _bot = await Bot.objects.get(id=bot)

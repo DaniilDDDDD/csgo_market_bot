@@ -43,25 +43,25 @@ dispatcher.add_handler(list_item_handler)
 dispatcher.add_handler(add_item_to_group_handler)
 dispatcher.add_handler(set_item_state_handler)
 dispatcher.add_handler(set_item_price_handler)
-
-
-async def database_connect(db: Database):
-    if not db.is_connected:
-        await db.connect()
-
-
-async def database_disconnect(db: Database):
-    if db.is_connected:
-        await db.disconnect()
-
-
-if __name__ == '__main__':
-    metadata.create_all(engine)
-
-    # async functions write with asyncio.run inside
-
-    asyncio.run(database_connect(database))
-
-    updater.start_polling()
-
-    # asyncio.run(database_disconnect(database))
+#
+#
+# async def database_connect(db: Database):
+#     if not db.is_connected:
+#         await db.connect()
+#
+#
+# async def database_disconnect(db: Database):
+#     if db.is_connected:
+#         await db.disconnect()
+#
+#
+# if __name__ == '__main__':
+#     metadata.create_all(engine)
+#
+#     # async functions write with asyncio.run inside
+#
+#     asyncio.run(database_connect(database))
+#
+#     updater.start_polling()
+#
+#     # asyncio.run(database_disconnect(database))

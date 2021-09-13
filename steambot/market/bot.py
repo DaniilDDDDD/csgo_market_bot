@@ -22,13 +22,6 @@ async def bot_balance(bot: Bot):
     return response.get('money', 0)
 
 
-async def bot_state(bot: Bot) -> str:
-    if (dt.now() - bot.state_check_timestamp) >= state_check_delta:
-        bot = await Bot.objects.get(id=bot.id)
-        bot.state_check_timestamp = dt.now()
-    return bot.state
-
-
 async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
     async def ping(_bot: Bot):
         if (dt.now() - _bot.last_ping_pong) >= ping_pong_delta:
@@ -39,6 +32,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
                     params={'key': _bot.secret_key}
                 ).json()
                 pinged = _response.get('success', False)
+                print(_response)
                 if not pinged:
                     await asyncio.sleep(10)
 
@@ -52,6 +46,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
     while not success:
         await ping(bot)
         response = requests.get(url=url, params=params).json()
+        print(response)
         success = response.get('success', False)
         if not success:
             await asyncio.sleep(10)
@@ -104,13 +99,13 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
             buy_for=item.get('market_price') * 0.85
         )
 
+
 async def bot_work(bot: Bot):
     """Проверка бота на ативность происходит в главном потоке, при получении из базы"""
     item_groups = await ItemGroup.objects.filter(bot=bot).exclude(state='disabled').all()
     tasks = [asyncio.create_task(bot_round_group(bot, item_group)) for item_group in item_groups]
     for task in tasks:
         await task
-    return
 
 
 # делает один оборот
@@ -185,19 +180,37 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
         await item.update(state='on_sale')
 
 
-# working
 async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
     if not items_ordered:
         item = items_for_buy[0]
+        if (item.classid is None or item.instanceid is None) and item.market_hash_name is not None:
+            response = await send_request_until_success(
+                bot,
+                'https://market.csgo.com/api/v2/search-item-by-hash-name',
+                {
+                    'hash_name': item.market_hash_name
+                }
+            )
+            print(response)
+            response = response.get('data')[0]
+            if item.sell_for is None or item.buy_for is None:
+                await item.update(
+                    classid=response.get('class'),
+                    instanceid=response.get('instance'),
+                    sell_for=response.get('price'),
+                    buy_for=response.get('price') * 0.87,
+                    ordered_for=response.get('price') * 0.87
+                )
+            else:
+                await item.update(classid=response.get('class'), instanceid=response.get('instance'))
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
-            print('before request')
+            print('in buy')
             response = await send_request_until_success(
                 bot,
                 f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
             )
-            print(response)
             await item.update(state='ordered')
 
 

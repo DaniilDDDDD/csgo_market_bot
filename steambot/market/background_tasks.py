@@ -31,15 +31,21 @@ async def bots_states_check():
                 tasks.append(asyncio.create_task(bot_work(bot)))
 
             if bot.state == 'sell':
+                # меняем статусы, делаем один оборот и уходим на паузу
                 tasks.append(asyncio.create_task(bot_sell(bot)))
+                tasks.append(asyncio.create_task(bot_work(bot)))
                 await bot.update(state='paused')
 
             if bot.state == 'buy':
+                # меняем статусы, делаем один оборот и уходим на паузу
                 tasks.append(asyncio.create_task(bot_buy(bot)))
+                tasks.append(asyncio.create_task(bot_work(bot)))
                 await bot.update(state='paused')
 
             if bot.state == 'hold':
+                # меняем статусы, делаем один оборот и уходим на паузу
                 tasks.append(asyncio.create_task(bot_hold(bot)))
+                tasks.append(asyncio.create_task(bot_work(bot)))
                 await bot.update(state='paused')
 
             if bot.state == 'destroy':
@@ -191,7 +197,7 @@ async def take_items(bot: Bot):
         inventory_before_update = await send_request_until_success(
             bot,
             'https://market.csgo.com/api/v2/my-inventory/'
-        ).get('items', [])
+        )
 
         response = await send_request_until_success(
             bot,
@@ -208,13 +214,14 @@ async def take_items(bot: Bot):
                 bot,
                 'https://market.csgo.com/api/v2/update-inventory/'
             )
+            await asyncio.sleep(20)
 
         except Exception:
             continue
 
-        await update_bought_items(bot, response.get('items', []), inventory_before_update)
+        await update_bought_items(bot, response.get('items', []), inventory_before_update.get('items', []))
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(40)
 
 
 async def update_bought_items(bot: Bot, items: List[str], inventory_before_update: List[dict]):
@@ -226,7 +233,8 @@ async def update_bought_items(bot: Bot, items: List[str], inventory_before_updat
     inventory = await send_request_until_success(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
-    ).get('items', [])
+    )
+    inventory = inventory.get('items', [])
 
     for elem in inventory:
         for e in inventory_before_update:

@@ -3,5 +3,5 @@
 /steambot/.env
 
 
-/steambot/telegram_bot/set_test.py
+/steambot/tests/cheking.py
 /steambot/telegram_bot/sqlite.db
