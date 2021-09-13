@@ -19,7 +19,7 @@ class Bot(ormar.Model):
     """
 
     state: str = ormar.String(nullable=False, max_length=100)
-    state_check_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
+    state_check_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now())
 
     last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now() - delta(minutes=3))
 

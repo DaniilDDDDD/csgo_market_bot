@@ -1,4 +1,5 @@
 import os
+import datetime
 import asyncio
 import requests
 from typing import List
@@ -32,9 +33,11 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
                     params={'key': _bot.secret_key}
                 ).json()
                 pinged = _response.get('success', False)
+                print('in ping')
                 print(_response)
                 if not pinged:
                     await asyncio.sleep(10)
+            await bot.update(last_ping_pong=datetime.datetime.now())
 
     if params is None:
         params = {}
@@ -46,6 +49,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
     while not success:
         await ping(bot)
         response = requests.get(url=url, params=params).json()
+        print('in response')
         print(response)
         success = response.get('success', False)
         if not success:
@@ -192,7 +196,6 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
                     'hash_name': item.market_hash_name
                 }
             )
-            print(response)
             response = response.get('data')[0]
             if item.sell_for is None or item.buy_for is None:
                 await item.update(
@@ -207,7 +210,7 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
             print('in buy')
-            response = await send_request_until_success(
+            await send_request_until_success(
                 bot,
                 f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
             )
