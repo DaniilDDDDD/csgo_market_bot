@@ -188,25 +188,25 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
     if not items_ordered:
         item = items_for_buy[0]
-        if (item.classid is None or item.instanceid is None) and item.market_hash_name is not None:
-            response = await send_request_until_success(
-                bot,
-                'https://market.csgo.com/api/v2/search-item-by-hash-name',
-                {
-                    'hash_name': item.market_hash_name
-                }
+
+        response = await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/search-item-by-hash-name',
+            {
+                'hash_name': item.market_hash_name
+            }
+        )
+        response = response.get('data')[0]
+        if item.sell_for is None or item.buy_for is None:
+            await item.update(
+                classid=response.get('class'),
+                instanceid=response.get('instance'),
+                sell_for=response.get('price'),
+                buy_for=response.get('price') * 0.87,
+                ordered_for=response.get('price') * 0.87
             )
-            response = response.get('data')[0]
-            if item.sell_for is None or item.buy_for is None:
-                await item.update(
-                    classid=response.get('class'),
-                    instanceid=response.get('instance'),
-                    sell_for=response.get('price'),
-                    buy_for=response.get('price') * 0.87,
-                    ordered_for=response.get('price') * 0.87
-                )
-            else:
-                await item.update(classid=response.get('class'), instanceid=response.get('instance'))
+        else:
+            await item.update(classid=response.get('class'), instanceid=response.get('instance'))
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
             print('in buy')

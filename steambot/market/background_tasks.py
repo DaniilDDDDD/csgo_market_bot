@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 
-from steampy.client import SteamClient
+from steampy.client import SteamClient, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
@@ -153,109 +153,154 @@ async def trades_confirmation():
             await task
 
 
-async def give_items(bot: Bot):
-    """
-    Отдаём боту маркета купленные у нас вещи.
-    """
-
-    while True:
-
-        response = await send_request_until_success(
-            bot,
-            'https://market.csgo.com/api/v2/trade-request-give'
-        )
-
-        steam_client = get_bot_steam_client(bot)
-        try:
-            # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
-            steam_client.accept_trade_offer(response.get('trade', ''))
-
-            # обновляем инвентарь
-
-            await send_request_until_success(
-                bot,
-                'https://market.csgo.com/api/v2/update-inventory/'
-            )
-
-        except Exception:
-            continue
-
-        items = await Item.objects.filter(market_id__in=response.get('items', [])).all()
-
-        for item in items:
-            await item.update(state='for_buy', market_id=None)
-
-        await asyncio.sleep(60)
-
-
 async def take_items(bot: Bot):
     """
-    Принимаем от бота купленнын нами вещи.
+    Принимаем трейды с купленными нами вещами
     """
-    while True:
 
-        inventory_before_update = await send_request_until_success(
-            bot,
-            'https://market.csgo.com/api/v2/my-inventory/'
-        )
+    def is_donation(_offer: dict) -> bool:
+        return _offer.get('items_to_receive') \
+               and not _offer.get('items_to_give') \
+               and _offer['trade_offer_state'] == TradeOfferState.Active \
+               and not _offer['is_our_offer']
 
+    async def get_items_on_receive(bot: Bot):
         response = await send_request_until_success(
             bot,
-            'https://market.csgo.com/api/v2/trade-request-take'
+            'https://market.csgo.com/api/v2/items'
         )
+        _items_on_recive = []
+        for item in response.get('items'):
+            if item.get('state') == '4':
+                _items_on_recive.append(item)
+        return _items_on_recive
 
-        steam_client = get_bot_steam_client(bot)
-        try:
-            # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
-            steam_client.accept_trade_offer(response.get('trade', ''))
-
-            # обновляем инвентарь
-            await send_request_until_success(
-                bot,
-                'https://market.csgo.com/api/v2/update-inventory/'
-            )
-            await asyncio.sleep(20)
-
-        except Exception:
-            continue
-
-        await update_bought_items(bot, response.get('items', []), inventory_before_update.get('items', []))
-
-        await asyncio.sleep(40)
+    items_on_receive = await get_items_on_receive(bot)
+    steam_client = get_bot_steam_client(bot)
+    offers = steam_client.get_trade_offers()['response']['trade_offers_received']
+    for offer in offers:
+        if is_donation(offer):
+            steam_client.accept_trade_offer(offer['tradeofferid'])
+            for i in offer['items_to_receive']:
+                item = await Item.objects.get(classid=i['classid'], instanceid=i['instanceid'])
+                if item:
+                    for _item in items_on_receive:
+                        if _item['classid'] == item.classid and _item['instanceid'] == item.instanceid:
+                            await item.update(market_id=_item['item_id'])
 
 
-async def update_bought_items(bot: Bot, items: List[str], inventory_before_update: List[dict]):
+async def give_items(bot: Bot):
     """
-    Проставляем market_id и market_hash_name для каждой полученной вещи (Item).
-    Обновляем статусы.
+    Отправляем пользователю купленные у нас вещи.
     """
+    pass
 
-    inventory = await send_request_until_success(
-        bot,
-        'https://market.csgo.com/api/v2/my-inventory/'
-    )
-    inventory = inventory.get('items', [])
-
-    for elem in inventory:
-        for e in inventory_before_update:
-            if e['id'] == elem['id']:
-                elem = None
-
-    added_items = [item for item in inventory if item is not None]
-
-    for elem in items:
-        class_id, instance_id = int(elem.partition('_')[0]), int(elem.partition('_')[2])
-
-        # объект единственный так как более одной вещи за раз заказать нельзя
-        item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(
-            instance_id=instance_id).first()
-
-        await item.update(ordered_for=item.buy_for)
-
-        for i in range(len(added_items)):
-            if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:
-                await item.update(
-                    market_id=added_items[i]['id'],
-                    market_hash_name=added_items[i]['market_hash_name']
-                )
-                added_items.pop(i)
+# async def give_items(bot: Bot):
+#     """
+#     Отдаём купленные у нас вещи.
+#     Создаём трейды
+#     """
+#
+#     while True:
+#
+#         # TODO: не работает с CSGO - переделать на https://market.csgo.com/api/v2/trade-request-give-p2p
+#         response = await send_request_until_success(
+#             bot,
+#             'https://market.csgo.com/api/v2/trade-request-give'
+#         )
+#
+#         steam_client = get_bot_steam_client(bot)
+#         try:
+#             # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
+#             steam_client.accept_trade_offer(response.get('trade', ''))
+#
+#             # обновляем инвентарь
+#
+#             await send_request_until_success(
+#                 bot,
+#                 'https://market.csgo.com/api/v2/update-inventory/'
+#             )
+#
+#         except Exception:
+#             continue
+#
+#         items = await Item.objects.filter(market_id__in=response.get('items', [])).all()
+#
+#         for item in items:
+#             await item.update(state='for_buy', market_id=None)
+#
+#         await asyncio.sleep(60)
+#
+#
+# async def take_items(bot: Bot):
+#     """
+#     Принимаем купленнын нами вещи.
+#     """
+#     # TODO: не работает с CSGO - переделать на постоянную проверку приходящих трейдов
+#     while True:
+#
+#         inventory_before_update = await send_request_until_success(
+#             bot,
+#             'https://market.csgo.com/api/v2/my-inventory/'
+#         )
+#
+#         response = await send_request_until_success(
+#             bot,
+#             'https://market.csgo.com/api/v2/trade-request-take'
+#         )
+#
+#         steam_client = get_bot_steam_client(bot)
+#         try:
+#             # TODO: добавить защиту от попытки получить лишние предметы (т.к. отдаём боту маркета, то пока не страшно)
+#             steam_client.accept_trade_offer(response.get('trade', ''))
+#
+#             # обновляем инвентарь
+#             await send_request_until_success(
+#                 bot,
+#                 'https://market.csgo.com/api/v2/update-inventory/'
+#             )
+#             await asyncio.sleep(20)
+#
+#         except Exception:
+#             continue
+#
+#         await update_bought_items(bot, response.get('items', []), inventory_before_update.get('items', []))
+#
+#         await asyncio.sleep(40)
+#
+#
+# async def update_bought_items(bot: Bot, items: List[str], inventory_before_update: List[dict]):
+#     """
+#     Проставляем market_id и market_hash_name для каждой полученной вещи (Item).
+#     Обновляем статусы.
+#     """
+#
+#     inventory = await send_request_until_success(
+#         bot,
+#         'https://market.csgo.com/api/v2/my-inventory/'
+#     )
+#     inventory = inventory.get('items', [])
+#
+#     for elem in inventory:
+#         for e in inventory_before_update:
+#             if e['id'] == elem['id']:
+#                 elem = None
+#
+#     added_items = [item for item in inventory if item is not None]
+#
+#     for elem in items:
+#         class_id, instance_id = int(elem.partition('_')[0]), int(elem.partition('_')[2])
+#
+#         # объект единственный так как более одной вещи за раз заказать нельзя
+#         item = await Item.objects.filter(state='ordered').filter(class_id=class_id).filter(
+#             instance_id=instance_id).first()
+#
+#         await item.update(ordered_for=item.buy_for)
+#
+#         for i in range(len(added_items)):
+#             if added_items[i]['classid'] == item.classid and added_items[i]['instanceid'] == item.instanceid:
+#                 await item.update(
+#                     market_id=added_items[i]['id'],
+#                     market_hash_name=added_items[i]['market_hash_name']
+#                 )
+#                 added_items.pop(i)

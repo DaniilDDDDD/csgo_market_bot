@@ -245,8 +245,6 @@ def create_item_group(update, context):
         <bot> - id бота, которому принадлежит данная группа,
         <state> - состояние ('active' по умолчанию),
         <market_hash_name> - хэш-название предмета с маркета,
-        <classid> - classid предмета,
-        <instanceid> - instanceid предмета,
         <amount> - количество предметов в обороте
         <buy_for> - цена покупки предмета из этой грцппы,
         <sell_for> - цена продажи предмета из этой грцппы.
@@ -257,8 +255,6 @@ def create_item_group(update, context):
             amount: int,
             buy_for: int,
             sell_for: int,
-            classid: int = None,
-            instanceid: int = None,
             market_hash_name: str = None,
             state: str = 'disabled'
     ) -> ItemGroup:
@@ -267,9 +263,7 @@ def create_item_group(update, context):
         _group = await ItemGroup.objects.get_or_create(
             bot=_bot,
             state=state,
-            market_hash_name=market_hash_name,
-            classid=classid,
-            instanceid=instanceid
+            market_hash_name=market_hash_name
         )
         assert _group
         for i in range(int(amount)):
@@ -279,9 +273,7 @@ def create_item_group(update, context):
                 ordered_for=buy_for,
                 sell_for=sell_for,
                 state='for_buy',
-                market_hash_name=market_hash_name,
-                classid=classid,
-                instanceid=instanceid
+                market_hash_name=market_hash_name
             )
             assert _item
         return _group
@@ -292,9 +284,7 @@ def create_item_group(update, context):
         'amount': '--',
         'buy_for': '--',
         'sell_for': '--',
-        'market_hash_name': None,
-        'classid': None,
-        'instanceid': None
+        'market_hash_name': None
     }
     arguments = check_args(context, update, arguments)
     if not arguments:
