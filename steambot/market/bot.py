@@ -120,7 +120,6 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
         items = {
             'ordered': [],
-            'untradable': [],
             'for_buy': [],
             'for_sale': [],
             'on_sale': []
@@ -129,7 +128,7 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
             items[item.state].append(item)
 
         task_sell = asyncio.create_task(sell(
-            bot, items['untradable'], items['for_sale']
+            bot, items['for_sale']
         ))
 
         task_buy = asyncio.create_task(buy(
@@ -161,17 +160,27 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
     await bot.update(state='circle_ended')
 
 
-async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item]):
+async def sell(bot: Bot, items_for_sale: List[Item]):
     """
     Выставление предмета на продажу.
-    У предметов (Item) должен быть id, так как они присутствуют в инвентаре.
+    Берём id предмета из инвентаря.
     """
-    for item in items_untradable:
-        if (dt.now() - item.trade_timestamp) > trade_lock_delta:
-            await item.update(state='for_sale')
-            items_for_sale.append(item)
+
+    inventory = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/my-inventory/'
+    )
+    inventory = inventory.get('items')
+
+    items_with_id = []
 
     for item in items_for_sale:
+        for _item in inventory:
+            if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
+                await item.update(market_id=_item['id'], state='on_sale')
+                items_with_id.append(item)
+
+    for item in items_with_id:
         await send_request_until_success(
             bot,
             'https://market.csgo.com/api/v2/add-to-sale',
@@ -181,7 +190,6 @@ async def sell(bot: Bot, items_untradable: List[Item], items_for_sale: List[Item
                 'cur': 'RUB'
             }
         )
-        await item.update(state='on_sale')
 
 
 async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
@@ -221,7 +229,6 @@ async def sell_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
-        'untradable': [],
         'for_buy': [],
         'for_sale': [],
         'on_sale': []
@@ -230,7 +237,7 @@ async def sell_group(bot: Bot, group: ItemGroup):
         items[item.state].append(item)
 
     task_sell = asyncio.create_task(sell(
-        bot, items['untradable'], items['for_sale']
+        bot, items['for_sale']
     ))
 
     task_delete_orders = asyncio.create_task(delete_orders(
@@ -245,7 +252,6 @@ async def buy_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
-        'untradable': [],
         'for_buy': [],
         'for_sale': [],
         'on_sale': []
@@ -269,7 +275,6 @@ async def hold_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
-        'untradable': [],
         'for_buy': [],
         'for_sale': [],
         'on_sale': []
@@ -289,15 +294,13 @@ async def hold_group(bot: Bot, group: ItemGroup):
     await task_delete_sale_offers
 
     for item in items_list:
-        if item.state != 'untradable':
-            await item.update(state='hold')
+        await item.update(state='hold')
 
 
 async def delete_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
-        'untradable': [],
         'for_buy': [],
         'for_sale': [],
         'on_sale': []
@@ -344,9 +347,7 @@ async def delete_sale_offers(bot, on_sale_items: List[Item]):
 
 
 async def hold_item(item: Item):
-    if item.state == 'untradable':
-        return
-    elif item.state == 'ordered':
+    if item.state == 'ordered':
         task_delete_order = asyncio.create_task(delete_orders(
             item.item_group.bot, [item]
         ))

@@ -70,9 +70,6 @@ class Item(ormar.Model):
 
     item_group: ItemGroup = ormar.ForeignKey(ItemGroup, nullable=True)
 
-    # начало задержки возможности обмена
-    trade_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now)
-
     # продавать за...
     sell_for: int = ormar.Integer(nullable=True, minimum=1)
 

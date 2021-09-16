@@ -148,6 +148,7 @@ async def trades_confirmation():
         for bot in bots:
             tasks.append(asyncio.create_task(give_items(bot)))
             tasks.append(asyncio.create_task(take_items(bot)))
+            await asyncio.sleep(30)
 
         for task in tasks:
             await task
@@ -164,29 +165,33 @@ async def take_items(bot: Bot):
                and _offer['trade_offer_state'] == TradeOfferState.Active \
                and not _offer['is_our_offer']
 
-    async def get_items_on_receive(bot: Bot):
-        response = await send_request_until_success(
-            bot,
-            'https://market.csgo.com/api/v2/items'
-        )
-        _items_on_recive = []
-        for item in response.get('items'):
-            if item.get('state') == '4':
-                _items_on_recive.append(item)
-        return _items_on_recive
+    # async def get_items_on_receive(bot: Bot):
+    #     response = await send_request_until_success(
+    #         bot,
+    #         'https://market.csgo.com/api/GetOrders//'
+    #     )
+    #     _items_on_recive = []
+    #     for item in response.get('items'):
+    #         if item.get('o_state') == '1':
+    #             _items_on_recive.append(item)
+    #     return _items_on_recive
 
-    items_on_receive = await get_items_on_receive(bot)
     steam_client = get_bot_steam_client(bot)
-    offers = steam_client.get_trade_offers()['response']['trade_offers_received']
-    for offer in offers:
+
+    # items_on_receive = await get_items_on_receive(bot)
+    offers = steam_client.get_trade_offers()
+    # print(offers)
+    for offer in offers['response']['trade_offers_received']:
+        # если донат, то принимаем (так как при покупке от нас не требуется никаких предметов)
+        # print(offer)
         if is_donation(offer):
             steam_client.accept_trade_offer(offer['tradeofferid'])
             for i in offer['items_to_receive']:
+                # обновляем базу данных, выставляя статусы для купленных вещей
+                # (for_sale, потому что продаются лишь обмениваемые вещи)
                 item = await Item.objects.get(classid=i['classid'], instanceid=i['instanceid'])
                 if item:
-                    for _item in items_on_receive:
-                        if _item['classid'] == item.classid and _item['instanceid'] == item.instanceid:
-                            await item.update(market_id=_item['item_id'])
+                    await item.update(state='for_sale')
 
 
 async def give_items(bot: Bot):
