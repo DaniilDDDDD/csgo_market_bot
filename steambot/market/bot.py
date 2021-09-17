@@ -22,7 +22,7 @@ async def bot_balance(bot: Bot):
     )
     return response.get('money', 0)
 
-
+# TODO: переписать через requests.Session()
 async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
     async def ping(_bot: Bot):
         if (dt.now() - _bot.last_ping_pong) >= ping_pong_delta:
