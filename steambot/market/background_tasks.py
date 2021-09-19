@@ -1,13 +1,15 @@
 import asyncio
 import requests
 from typing import List
+from steampy.utils import GameOptions
 
-from steampy.client import SteamClient, TradeOfferState
+from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
 from .bot import bot_work, send_request_until_success, bot_balance
 
+game = GameOptions.CS
 steam_clients = {}
 
 
@@ -123,7 +125,6 @@ def get_bot_steam_client(bot: Bot) -> SteamClient:
     """
     Получение steam-клиента, работающего с данными бота.
     """
-
     if bot.id in steam_clients:
         return steam_clients[bot.id]
     else:
@@ -194,39 +195,20 @@ async def give_items(bot: Bot):
     offers = response.get('offers')
 
     for offer in offers:
-        headers = {
-            'referer': f'https://steamcommunity.com/tradeoffer/new/?partner={offer["partner"]}&token={offer["token"]}'
-        }
-        data = {
-            'serverid': 1,
-            'tradeofferid_countered': None,
-            'captcha': None,
-
-            'partner': offer['partner'],
-            'sessionid': steam_client._get_session_id(),
-            'tradeoffermessage': offer['tradeoffermessage'],
-            'json_tradeoffer': {
-                'newversion': True,
-                'version': 4,
-                'me': {
-                    'assets': offer['items'],
-                    'currency': [],
-                    'ready': False
-                },
-                'them': {
-                    'assets': [],
-                    'currency': [],
-                    'ready': False
-                }
-            },
-            'trade_offer_create_params': {
-                'trade_offer_access_token': offer['token']
-            }
-        }
-        _response = requests.post(
-            url='https://steamcommunity.com/tradeoffer/new/send',
-            headers=headers,
-            data=data
+        steam_client.make_offer_with_url(
+            message=offer['tradeoffermessage'],
+            items_from_me=[Asset(asset['assetid'], game) for asset in offer['items']],
+            items_from_them=[],
+            trade_offer_url=f"https://steamcommunity.com/tradeoffer/new/"
+                            f"?partner={offer['partner']}&token={offer['token']}"
         )
 
-    # TODO: обновлять статусы проданных вещей
+    response = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/items'
+    )
+
+    for item in response.get('items', []):
+        if item.get('status') == '2':
+            _item = await Item.objects.get(classid=item.get('classid'), instanceid=item.get('instanceid'))
+            await _item.update(state='for_buy')

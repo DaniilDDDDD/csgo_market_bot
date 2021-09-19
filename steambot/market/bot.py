@@ -14,21 +14,24 @@ state_check_delta = delta(minutes=int(os.environ.get('STATE_CHECK_TIMEDELTA')))
 trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
 
+sessions = {}
 
-async def bot_balance(bot: Bot):
-    response = await send_request_until_success(
-        bot,
-        'https://market.csgo.com/api/v2/get-money'
-    )
-    return response.get('money', 0)
 
-# TODO: переписать через requests.Session()
 async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
-    async def ping(_bot: Bot):
+    def get_bot_session(_bot: Bot) -> requests.Session:
+        global sessions
+        if _bot.id in sessions:
+            return sessions[_bot.id]
+        else:
+            _session = requests.session()
+            sessions[_bot.id] = _session
+            return _session
+
+    async def ping(_bot: Bot, _session: requests.Session):
         if (dt.now() - _bot.last_ping_pong) >= ping_pong_delta:
             pinged = False
             while not pinged:
-                _response = requests.get(
+                _response = _session.get(
                     url='https://market.csgo.com/api/v2/ping',
                     params={'key': _bot.secret_key}
                 ).json()
@@ -39,6 +42,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
                     await asyncio.sleep(10)
             await bot.update(last_ping_pong=datetime.datetime.now())
 
+    session = get_bot_session(bot)
     if params is None:
         params = {}
     if 'key' not in params:
@@ -47,7 +51,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
     success = False
     response = {}
     while not success:
-        await ping(bot)
+        await ping(bot, session)
         response = requests.get(url=url, params=params).json()
         print('in response')
         print(response)
@@ -55,6 +59,14 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
         if not success:
             await asyncio.sleep(10)
     return response
+
+
+async def bot_balance(bot: Bot):
+    response = await send_request_until_success(
+        bot,
+        'https://market.csgo.com/api/v2/get-money'
+    )
+    return response.get('money', 0)
 
 
 async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 'hold'):
