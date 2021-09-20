@@ -41,6 +41,7 @@ def help(update, context):
 
     result = f'Документация Бота {bot_name}.\n'
     result += 'Все функции принимают аргументы в виде <key>=<value>.\n'
+    result += 'Установлении цены она должна быть меньше самого дешёвого лота, выставленного на продажу!!!'
 
     result += help.__doc__
     result += market_bot_inventory.__doc__
@@ -247,7 +248,7 @@ def create_item_group(update, context):
         <market_hash_name> - хэш-название предмета с маркета,
         <amount> - количество предметов в обороте
         <buy_for> - цена покупки предмета из этой грцппы,
-        <sell_for> - цена продажи предмета из этой грцппы.
+        <sell_for> - цена продажи предмета из этой группы.
     """
 
     async def create_item_group_in_db(

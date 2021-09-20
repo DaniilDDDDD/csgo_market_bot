@@ -1,5 +1,4 @@
 import os
-import datetime
 import asyncio
 import requests
 from typing import List
@@ -18,6 +17,10 @@ sessions = {}
 
 
 async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
+    """
+    Запросы к market.csgo.
+    Перед каждым запросом проверяется, онлайн ли бот.
+    """
     def get_bot_session(_bot: Bot) -> requests.Session:
         global sessions
         if _bot.id in sessions:
@@ -40,7 +43,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
                 print(_response)
                 if not pinged:
                     await asyncio.sleep(10)
-            await bot.update(last_ping_pong=datetime.datetime.now())
+            await bot.update(last_ping_pong=dt.now())
 
     session = get_bot_session(bot)
     if params is None:
@@ -52,7 +55,7 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
     response = {}
     while not success:
         await ping(bot, session)
-        response = requests.get(url=url, params=params).json()
+        response = session.get(url=url, params=params).json()
         print('in response')
         print(response)
         success = response.get('success', False)
@@ -186,9 +189,10 @@ async def sell(bot: Bot, items_for_sale: List[Item]):
 
     items_with_id = []
 
+    # Добавляем market_id предметам, которые выставляем на продажу
     for item in items_for_sale:
         for _item in inventory:
-            if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
+            if item.classid == int(_item['classid']) and item.instanceid == int(_item['instanceid']):
                 await item.update(market_id=_item['id'], state='on_sale')
                 items_with_id.append(item)
 
@@ -216,6 +220,7 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
                 'hash_name': item.market_hash_name
             }
         )
+        # Берём первый, самый дешёвый предмет
         response = response.get('data')[0]
         if item.sell_for is None or item.buy_for is None:
             await item.update(

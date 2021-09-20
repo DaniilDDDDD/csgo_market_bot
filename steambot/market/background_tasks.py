@@ -1,13 +1,14 @@
 import asyncio
 import requests
 from typing import List
+from datetime import datetime as dt
 from steampy.utils import GameOptions
 
 from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work, send_request_until_success, bot_balance
+from .bot import bot_work, send_request_until_success, bot_balance, ping_pong_delta
 
 game = GameOptions.CS
 steam_clients = {}
@@ -150,10 +151,16 @@ async def trades_confirmation():
         for bot in bots:
             tasks.append(asyncio.create_task(give_items(bot)))
             tasks.append(asyncio.create_task(take_items(bot)))
-            await asyncio.sleep(30)
+            # обновляем инвентарь
+            await send_request_until_success(
+                bot,
+                'https://market.csgo.com/api/v2/update-inventory/'
+            )
 
         for task in tasks:
             await task
+
+        await asyncio.sleep(30)
 
 
 async def take_items(bot: Bot):
@@ -177,7 +184,7 @@ async def take_items(bot: Bot):
             for i in offer['items_to_receive']:
                 # обновляем базу данных, выставляя статусы для купленных вещей
                 # (for_sale, потому что продаются лишь обмениваемые вещи)
-                item = await Item.objects.get(classid=i['classid'], instanceid=i['instanceid'])
+                item = await Item.objects.get(classid=int(i['classid']), instanceid=int(i['instanceid']))
                 if item:
                     await item.update(state='for_sale')
 
@@ -186,29 +193,49 @@ async def give_items(bot: Bot):
     """
     Отправляем пользователю купленные у нас вещи.
     """
+
+    async def ping(_bot: Bot):
+        if (dt.now() - _bot.last_ping_pong) >= ping_pong_delta:
+            pinged = False
+            while not pinged:
+                _response = requests.get(
+                    url='https://market.csgo.com/api/v2/ping',
+                    params={'key': _bot.secret_key}
+                ).json()
+                pinged = _response.get('success', False)
+                if not pinged:
+                    await asyncio.sleep(10)
+            await bot.update(last_ping_pong=dt.now())
+
     steam_client = get_bot_steam_client(bot)
 
-    response = await send_request_until_success(
-        bot,
-        'https://market.csgo.com/api/v2/trade-request-give-p2p-all'
-    )
-    offers = response.get('offers')
+    # используется отдельный запрос к market.csgo, так как при отсутствии предметоа на передачу возвращается ошибка
+    await ping(bot)
+    response = requests.get(
+        'https://market.csgo.com/api/v2/trade-request-give-p2p-all',
+        params={'key': bot.secret_key}
+    ).json()
 
-    for offer in offers:
-        steam_client.make_offer_with_url(
-            message=offer['tradeoffermessage'],
-            items_from_me=[Asset(asset['assetid'], game) for asset in offer['items']],
-            items_from_them=[],
-            trade_offer_url=f"https://steamcommunity.com/tradeoffer/new/"
-                            f"?partner={offer['partner']}&token={offer['token']}"
+    offers = response.get('offers', [])
+
+    if offers:
+
+        for offer in offers:
+            steam_client.make_offer_with_url(
+                message=offer['tradeoffermessage'],
+                items_from_me=[Asset(asset['assetid'], game) for asset in offer['items']],
+                items_from_them=[],
+                trade_offer_url=f"https://steamcommunity.com/tradeoffer/new/"
+                                f"?partner={offer['partner']}&token={offer['token']}"
+            )
+
+        # обновляем статусы проданых (переданных) предметов
+        response = await send_request_until_success(
+            bot,
+            'https://market.csgo.com/api/v2/items'
         )
 
-    response = await send_request_until_success(
-        bot,
-        'https://market.csgo.com/api/v2/items'
-    )
-
-    for item in response.get('items', []):
-        if item.get('status') == '2':
-            _item = await Item.objects.get(classid=item.get('classid'), instanceid=item.get('instanceid'))
-            await _item.update(state='for_buy')
+        for item in response.get('items', []):
+            if item.get('status') == '2':
+                _item = await Item.objects.get(classid=item.get('classid'), instanceid=item.get('instanceid'))
+                await _item.update(state='for_buy')
