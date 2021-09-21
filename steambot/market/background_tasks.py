@@ -141,8 +141,7 @@ def get_bot_steam_client(bot: Bot) -> SteamClient:
 
 async def trades_confirmation():
     """
-    Проход по всем Item и подтверждение обмена при наличии ссылки на обмен.
-    Ссылка не трейд не нужна, так как бот маркета сам предлагает обмен.
+    Принятие и отправление обменов.
     """
 
     while True:
@@ -151,14 +150,17 @@ async def trades_confirmation():
         for bot in bots:
             tasks.append(asyncio.create_task(give_items(bot)))
             tasks.append(asyncio.create_task(take_items(bot)))
-            # обновляем инвентарь
+
+        for task in tasks:
+            await task
+
+        # обновляем инвентарь
+        print('Inventory update')
+        for bot in bots:
             await send_request_until_success(
                 bot,
                 'https://market.csgo.com/api/v2/update-inventory/'
             )
-
-        for task in tasks:
-            await task
 
         await asyncio.sleep(30)
 
@@ -174,9 +176,12 @@ async def take_items(bot: Bot):
                and _offer['trade_offer_state'] == TradeOfferState.Active \
                and not _offer['is_our_offer']
 
+    print('In take_items')
+
     steam_client = get_bot_steam_client(bot)
 
     offers = steam_client.get_trade_offers()
+    print(offers)
     for offer in offers['response']['trade_offers_received']:
         # если донат, то принимаем (так как при покупке от нас не требуется никаких предметов)
         if is_donation(offer):
@@ -184,7 +189,7 @@ async def take_items(bot: Bot):
             for i in offer['items_to_receive']:
                 # обновляем базу данных, выставляя статусы для купленных вещей
                 # (for_sale, потому что продаются лишь обмениваемые вещи)
-                item = await Item.objects.get(classid=int(i['classid']), instanceid=int(i['instanceid']))
+                item = await Item.objects.get(classid=i['classid'], instanceid=i['instanceid'])
                 if item:
                     await item.update(state='for_sale')
 
@@ -207,6 +212,8 @@ async def give_items(bot: Bot):
                     await asyncio.sleep(10)
             await bot.update(last_ping_pong=dt.now())
 
+    print('In give_items')
+
     steam_client = get_bot_steam_client(bot)
 
     # используется отдельный запрос к market.csgo, так как при отсутствии предметоа на передачу возвращается ошибка
@@ -215,6 +222,8 @@ async def give_items(bot: Bot):
         'https://market.csgo.com/api/v2/trade-request-give-p2p-all',
         params={'key': bot.secret_key}
     ).json()
+
+    print(response)
 
     offers = response.get('offers', [])
 

@@ -415,8 +415,8 @@ def add_item_to_group(update, context):
             state: str,
             market_id: int = None,
             market_hash_name: str = None,
-            classid: int = None,
-            instanceid: int = None
+            classid: str = None,
+            instanceid: str = None
     ) -> Item:
         _group = await ItemGroup.objects.get(id=item_group)
         assert _group
