@@ -4,6 +4,7 @@ from databases import Database
 from core.database import database, metadata, engine
 
 from telegram_bot.bot import updater
+from market.background_tasks import update_orders_price, bots_states_check, trades_confirmation
 
 
 
@@ -18,6 +19,11 @@ async def database_disconnect(db: Database):
 
 
 async def main():
+
+    await bots_states_check()
+    await trades_confirmation()
+    await update_orders_price()
+
 
 
 

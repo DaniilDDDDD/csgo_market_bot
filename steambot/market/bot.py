@@ -16,11 +16,25 @@ ping_pong_delta = delta(minutes=3)
 sessions = {}
 
 
-async def send_request_to_market(bot: Bot, url: str, params: dict = None, return_error: bool = False) -> dict:
+# TODO: заменить на логирование
+def log(out: str):
+    print(str(out))
+
+
+# TODO: попробовать переписать асинхронно
+async def send_request_to_market(
+        bot: Bot,
+        url: str,
+        params: dict = None,
+        return_error: bool = False,
+        error_recursion: bool = False
+) -> dict:
     """
     Запросы к market.csgo.
     Перед каждым запросом проверяется, онлайн ли бот.
+    Если в процессе запроста появляется ошибка, то возвращается её сообшение внутри словаря в ключе 'error'.
     """
+
     def get_bot_session(_bot: Bot) -> requests.Session:
         global sessions
         if _bot.id in sessions:
@@ -39,8 +53,8 @@ async def send_request_to_market(bot: Bot, url: str, params: dict = None, return
                     params={'key': _bot.secret_key}
                 ).json()
                 pinged = _response.get('success', False)
-                print('in ping')
-                print(_response)
+                log('in ping')
+                log(_response)
                 if not pinged:
                     await asyncio.sleep(10)
             await bot.update(last_ping_pong=dt.now())
@@ -54,37 +68,49 @@ async def send_request_to_market(bot: Bot, url: str, params: dict = None, return
     success = False
     response = {}
 
-    if not return_error:
-        while not success:
-            await ping(bot, session)
-            response = session.get(url=url, params=params).json()
-            print('in response')
-            print(response)
-            success = response.get('success', False)
-            if not success:
-                await asyncio.sleep(10)
-        return response
+    try:
 
-    else:
-        while not success:
-            await ping(bot, session)
-            response = session.get(url=url, params=params).json()
-            if 'error' in response:
-                return response
-            print('in response')
-            print(response)
-            success = response.get('success', False)
-            if not success:
-                await asyncio.sleep(10)
+        if not return_error:
+            while not success:
+                await ping(bot, session)
+                response = session.get(url=url, params=params).json()
+                log('in response')
+                log(response)
+                success = response.get('success', False)
+                if not success:
+                    await asyncio.sleep(10)
             return response
 
+        else:
+            while not success:
+                await ping(bot, session)
+                response = session.get(url=url, params=params).json()
+                if 'error' in response:
+                    return response
+                log('in response')
+                log(response)
+                success = response.get('success', False)
+                if not success:
+                    await asyncio.sleep(10)
+                return response
+
+    except Exception as e:
+        if error_recursion:
+            await asyncio.sleep(10)
+            await send_request_to_market(bot, url, params, return_error, error_recursion)
+        else:
+            raise e
 
 
 async def bot_balance(bot: Bot):
     response = await send_request_to_market(
         bot,
-        'https://market.csgo.com/api/v2/get-money'
+        'https://market.csgo.com/api/v2/get-money',
+        return_error=True
     )
+    if 'error' in response:
+        await asyncio.sleep(10)
+        await bot_balance(bot)
     return response.get('money', 0)
 
 
@@ -94,17 +120,21 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
     Если current_items == "hold", то предметы не учавствуют в торгах и назодятся "на удержании".
     Если current_items == "for_sale" то предметы учавствуют в торгах если есть возможность их обменивать.
     """
+    try:
+        await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/update-inventory/'
+        )
+        await asyncio.sleep(10)
+        response = await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/my-inventory/'
+        )
+    except Exception as e:
+        log(e)
+        return
 
-    await send_request_to_market(
-        bot,
-        'https://market.csgo.com/api/v2/update-inventory/'
-    )
-
-    response = await send_request_to_market(
-        bot,
-        'https://market.csgo.com/api/v2/my-inventory/'
-    )
-    for item in response.get('items'):
+    for item in response.get('items', []):
 
         group = await ItemGroup.objects.get_or_create(
             state='disabled',
@@ -158,11 +188,11 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         for item in items_list:
             items[item.state].append(item)
 
-        task_sell = asyncio.create_task(sell(
+        task_sell = asyncio.create_task(_sell(
             bot, items['for_sale']
         ))
 
-        task_buy = asyncio.create_task(buy(
+        task_buy = asyncio.create_task(_buy(
             bot, items['for_buy'], items['ordered']
         ))
 
@@ -170,38 +200,42 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         await task_buy
 
     if group.state == 'sell':
-        task_sell_all = asyncio.create_task(sell_group(bot, group))
+        task_sell_all = asyncio.create_task(_sell_group(bot, group))
         await task_sell_all
         await group.update(state='disabled')
 
     if group.state == 'buy':
-        task_buy_all = asyncio.create_task(buy_group(bot, group))
+        task_buy_all = asyncio.create_task(_buy_group(bot, group))
         await task_buy_all
         await group.update(state='disabled')
 
     if group.state == 'hold':
-        task_hold_all = asyncio.create_task(hold_group(bot, group))
+        task_hold_all = asyncio.create_task(_hold_group(bot, group))
         await task_hold_all
         await group.update(state='disabled')
 
     if group.state == 'delete':
-        task_delete_group = asyncio.create_task(delete_group(bot, group))
+        task_delete_group = asyncio.create_task(_delete_group(bot, group))
         await task_delete_group
 
     await bot.update(state='circle_ended')
 
 
-async def sell(bot: Bot, items_for_sale: List[Item]):
+async def _sell(bot: Bot, items_for_sale: List[Item]):
     """
     Выставление предмета на продажу.
     Берём id предмета из инвентаря.
     """
 
-    inventory = await send_request_to_market(
-        bot,
-        'https://market.csgo.com/api/v2/my-inventory/'
-    )
-    inventory = inventory.get('items')
+    try:
+        inventory = await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/my-inventory/'
+        )
+        inventory = inventory.get('items', [])
+    except Exception as e:
+        log(e)
+        return
 
     items_with_id = []
 
@@ -213,18 +247,31 @@ async def sell(bot: Bot, items_for_sale: List[Item]):
                 items_with_id.append(item)
 
     for item in items_with_id:
-        await send_request_to_market(
+        response = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/add-to-sale',
             {
                 'id': item.market_id,
                 'price': item.sell_for,
                 'cur': 'RUB'
-            }
+            },
+            return_error=True
         )
+        if 'error' in response:
+            try:
+                await send_request_to_market(
+                    bot,
+                    'https://market.csgo.com/api/v2/update-inventory/'
+                )
+                await asyncio.sleep(20)
+                await _sell(bot, items_with_id)
+            except Exception as e:
+                log(e)
+                for _item in items_for_sale:
+                    await _item.update(state='for_sale')
 
 
-async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
+async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
     if not items_ordered:
         item = items_for_buy[0]
@@ -234,8 +281,10 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             'https://market.csgo.com/api/v2/search-item-by-hash-name',
             {
                 'hash_name': item.market_hash_name
-            }
+            },
+            error_recursion=True
         )
+
         # Берём первый, самый дешёвый предмет
         response = response.get('data')[0]
         if item.sell_for is None or item.buy_for is None:
@@ -244,21 +293,31 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
                 instanceid=response.get('instance'),
                 sell_for=response.get('price'),
                 buy_for=response.get('price') * 0.87,
-                ordered_for=response.get('price') * 0.87
+                ordered_for=response.get('price') * 0.87,
+                state='ordered'
             )
         else:
-            await item.update(classid=response.get('class'), instanceid=response.get('instance'))
+            await item.update(classid=response.get('class'), instanceid=response.get('instance'), state='ordered')
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
-            print('in buy')
-            await send_request_to_market(
-                bot,
-                f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
-            )
-            await item.update(state='ordered')
+            log('in buy')
+            try:
+                response = await send_request_to_market(
+                    bot,
+                    f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//',
+                    return_error=True
+                )
+                if 'error' in response:
+                    log(f'error: {response.get("error")}')
+                    await item.update(state='for_buy')
+                    return
+            except Exception as e:
+                log(e)
+                await item.update(state='for_buy')
+                return
 
 
-async def sell_group(bot: Bot, group: ItemGroup):
+async def _sell_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
@@ -269,11 +328,11 @@ async def sell_group(bot: Bot, group: ItemGroup):
     for item in items_list:
         items[item.state].append(item)
 
-    task_sell = asyncio.create_task(sell(
+    task_sell = asyncio.create_task(_sell(
         bot, items['for_sale']
     ))
 
-    task_delete_orders = asyncio.create_task(delete_orders(
+    task_delete_orders = asyncio.create_task(_delete_orders(
         bot, items['ordered']
     ))
 
@@ -281,7 +340,7 @@ async def sell_group(bot: Bot, group: ItemGroup):
     await task_sell
 
 
-async def buy_group(bot: Bot, group: ItemGroup):
+async def _buy_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
@@ -292,11 +351,11 @@ async def buy_group(bot: Bot, group: ItemGroup):
     for item in items_list:
         items[item.state].append(item)
 
-    task_buy = asyncio.create_task(buy(
+    task_buy = asyncio.create_task(_buy(
         bot, items['for_buy'], items['ordered']
     ))
 
-    task_delete_sale_offers = asyncio.create_task(delete_sale_offers(
+    task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
         bot, items['on_sale']
     ))
 
@@ -304,7 +363,7 @@ async def buy_group(bot: Bot, group: ItemGroup):
     await task_delete_sale_offers
 
 
-async def hold_group(bot: Bot, group: ItemGroup):
+async def _hold_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
@@ -315,11 +374,11 @@ async def hold_group(bot: Bot, group: ItemGroup):
     for item in items_list:
         items[item.state].append(item)
 
-    task_delete_sale_offers = asyncio.create_task(delete_sale_offers(
+    task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
         bot, items['on_sale']
     ))
 
-    task_delete_orders = asyncio.create_task(delete_orders(
+    task_delete_orders = asyncio.create_task(_delete_orders(
         bot, items['ordered']
     ))
 
@@ -330,7 +389,7 @@ async def hold_group(bot: Bot, group: ItemGroup):
         await item.update(state='hold')
 
 
-async def delete_group(bot: Bot, group: ItemGroup):
+async def _delete_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
@@ -341,11 +400,11 @@ async def delete_group(bot: Bot, group: ItemGroup):
     for item in items_list:
         items[item.state].append(item)
 
-    task_delete_sale_offers = asyncio.create_task(delete_sale_offers(
+    task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
         bot, items['on_sale']
     ))
 
-    task_delete_orders = asyncio.create_task(delete_orders(
+    task_delete_orders = asyncio.create_task(_delete_orders(
         bot, items['ordered']
     ))
 
@@ -356,37 +415,55 @@ async def delete_group(bot: Bot, group: ItemGroup):
     await group.delete()
 
 
-async def delete_orders(bot: Bot, ordered_items: List[Item]):
+async def _delete_orders(bot: Bot, ordered_items: List[Item]):
     for item in ordered_items:
-        await send_request_to_market(
+
+        response = await send_request_to_market(
             bot,
-            f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/'
+            f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/',
+            return_error=True,
+            error_recursion=True
         )
+        if 'error' in response:
+            log(response['error'])
+            if response['error'] == 'same_price':
+                continue
+            elif response['error'] == 'internal':
+                await asyncio.sleep(20)
+                await _delete_orders(bot, [item])
+
         await item.update(state='for_buy')
 
 
-async def delete_sale_offers(bot, on_sale_items: List[Item]):
+async def _delete_sale_offers(bot, on_sale_items: List[Item]):
     for item in on_sale_items:
-        await send_request_to_market(
+        response = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/set-price',
             {
                 'price': 0,
                 'item_id': item.market_id,
                 'cur': 'RUB'
-            }
+            },
+            return_error=True,
+            error_recursion=True
         )
+        if 'error' in response:
+            log(f'item {item.id} is not on sale!')
+            await item.update(state='hold')
+            continue
+
         await item.update(state='for_sale')
 
 
 async def hold_item(item: Item):
     if item.state == 'ordered':
-        task_delete_order = asyncio.create_task(delete_orders(
+        task_delete_order = asyncio.create_task(_delete_orders(
             item.item_group.bot, [item]
         ))
         await task_delete_order
     elif item.state == 'on_sale':
-        task_delete_offer = asyncio.create_task(delete_sale_offers(
+        task_delete_offer = asyncio.create_task(_delete_sale_offers(
             item.item_group.bot, [item]
         ))
         await task_delete_offer
@@ -397,12 +474,12 @@ async def delete_item(item: Item):
     if item.state == 'hold':
         return
     if item.state == 'ordered':
-        task_delete_order = asyncio.create_task(delete_orders(
+        task_delete_order = asyncio.create_task(_delete_orders(
             item.item_group.bot, [item]
         ))
         await task_delete_order
     elif item.state == 'on_sale':
-        task_delete_offer = asyncio.create_task(delete_sale_offers(
+        task_delete_offer = asyncio.create_task(_delete_sale_offers(
             item.item_group.bot, [item]
         ))
         await task_delete_offer
