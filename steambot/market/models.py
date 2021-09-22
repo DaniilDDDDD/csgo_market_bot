@@ -90,6 +90,6 @@ class Item(ormar.Model):
                f"Item state is {self.state}.\n" \
                f"Item's market hash name is {getattr(self, 'market_hash_name', 'None')}" \
                f"Item belongs to group of items with id {self.item_group.id}.\n" \
-               f"Item would be bought for {self.buy_for} and sold for {self.sell_for}.\n" \
+               f"Item would be bought for {self.ordered_for} and sold for {self.sell_for}.\n" \
                f"If item is bought it's id on market is {getattr(self, 'market_id', 'None')}, " \
                f"classid is {getattr(self, 'classid', 'None')}, instanceid is {getattr(self, 'instanceid', 'None')}."

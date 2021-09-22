@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from telegram.ext import CommandHandler
 
 from market.models import Bot, ItemGroup, Item
-from market.bot import send_request_until_success, hold_item, delete_item
+from market.bot import send_request_to_market, hold_item, delete_item
 
 load_dotenv()
 
@@ -93,7 +93,7 @@ def market_bot_inventory(update, context):
         context.bot.send_message(chat_id=update.effective_chat.id, text='Bot with this "id" does not exists!')
         return
 
-    response = asyncio.run(send_request_until_success(
+    response = asyncio.run(send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
     )).json()

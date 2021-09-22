@@ -8,7 +8,7 @@ from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work, send_request_until_success, bot_balance, ping_pong_delta
+from .bot import bot_work, send_request_to_market, bot_balance, ping_pong_delta
 
 game = GameOptions.CS
 steam_clients = {}
@@ -69,7 +69,7 @@ async def bot_delete(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).all()
     await Item.objects.delete(item_group__in=groups)
     await ItemGroup.objects.delete(bot=bot)
-    await send_request_until_success(
+    await send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/go-offline'
     )
@@ -100,26 +100,38 @@ async def update_orders_price():
     если появляется ордер от другого пользователя, который автоматически покупает предмет, но за большую сумму,
     то обновляему ордер, чтобы наш был дороже, дабы ордер был удовлетворён ранее
     """
-    items = await Item.objects.filter(state='ordered').all()
+    while True:
+        items = await Item.objects.select_related(Item.item_group.bot).filter(state='ordered').all()
 
-    for item in items:
+        for item in items:
 
-        response = await send_request_until_success(
-            item.item_group.bot,
-            f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/'
-        )
-
-        if response.get('best_offer') > item.ordered_for \
-                and (response.get('best_offer') + 1) < item.sell_for * 0.90 \
-                and (response.get('best_offer') + 1) < await bot_balance(item.item_group.bot):
-            await send_request_until_success(
+            response = await send_request_to_market(
                 item.item_group.bot,
-                f'https://market.csgo.com/api/UpdateOrder/'
-                f'{item.classid}/{item.instanceid}/{response.get("best_offer") + 1}/'
+                f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/'
             )
-            await item.update(ordered_for=(response.get("best_offer") + 1))
+            best_offer = int(response.get('best_offer'))
 
-    await asyncio.sleep(10)
+            if best_offer >= item.ordered_for \
+                    and (best_offer + 1) < item.sell_for * 0.90 \
+                    and (best_offer + 1) < await bot_balance(item.item_group.bot) * 100:
+                await send_request_to_market(
+                    item.item_group.bot,
+                    f'https://market.csgo.com/api/UpdateOrder/'
+                    f'{item.classid}/{item.instanceid}/{best_offer + 1}/'
+                )
+                await item.update(ordered_for=(best_offer + 1))
+
+            # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
+            # исходящего не от нас и отличающегося от нашего холтя бы на 3%, сменяем цену на цену этого ордера + 1
+            elif item.ordered_for - best_offer > item.sell_for * 0.03 and item.sell_for > 50000:
+                await send_request_to_market(
+                    item.item_group.bot,
+                    f'https://market.csgo.com/api/UpdateOrder/'
+                    f'{item.classid}/{item.instanceid}/{best_offer + 1}/'
+                )
+                await item.update(ordered_for=(best_offer + 1))
+
+        await asyncio.sleep(10)
 
 
 def get_bot_steam_client(bot: Bot) -> SteamClient:
@@ -157,7 +169,7 @@ async def trades_confirmation():
         # обновляем инвентарь
         print('Inventory update')
         for bot in bots:
-            await send_request_until_success(
+            await send_request_to_market(
                 bot,
                 'https://market.csgo.com/api/v2/update-inventory/'
             )
@@ -239,7 +251,7 @@ async def give_items(bot: Bot):
             )
 
         # обновляем статусы проданых (переданных) предметов
-        response = await send_request_until_success(
+        response = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/items'
         )

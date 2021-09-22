@@ -16,7 +16,7 @@ ping_pong_delta = delta(minutes=3)
 sessions = {}
 
 
-async def send_request_until_success(bot: Bot, url: str, params: dict = None) -> dict:
+async def send_request_to_market(bot: Bot, url: str, params: dict = None, return_error: bool = False) -> dict:
     """
     Запросы к market.csgo.
     Перед каждым запросом проверяется, онлайн ли бот.
@@ -53,19 +53,35 @@ async def send_request_until_success(bot: Bot, url: str, params: dict = None) ->
 
     success = False
     response = {}
-    while not success:
-        await ping(bot, session)
-        response = session.get(url=url, params=params).json()
-        print('in response')
-        print(response)
-        success = response.get('success', False)
-        if not success:
-            await asyncio.sleep(10)
-    return response
+
+    if not return_error:
+        while not success:
+            await ping(bot, session)
+            response = session.get(url=url, params=params).json()
+            print('in response')
+            print(response)
+            success = response.get('success', False)
+            if not success:
+                await asyncio.sleep(10)
+        return response
+
+    else:
+        while not success:
+            await ping(bot, session)
+            response = session.get(url=url, params=params).json()
+            if 'error' in response:
+                return response
+            print('in response')
+            print(response)
+            success = response.get('success', False)
+            if not success:
+                await asyncio.sleep(10)
+            return response
+
 
 
 async def bot_balance(bot: Bot):
-    response = await send_request_until_success(
+    response = await send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/get-money'
     )
@@ -79,12 +95,12 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
     Если current_items == "for_sale" то предметы учавствуют в торгах если есть возможность их обменивать.
     """
 
-    await send_request_until_success(
+    await send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/update-inventory/'
     )
 
-    response = await send_request_until_success(
+    response = await send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
     )
@@ -181,7 +197,7 @@ async def sell(bot: Bot, items_for_sale: List[Item]):
     Берём id предмета из инвентаря.
     """
 
-    inventory = await send_request_until_success(
+    inventory = await send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
     )
@@ -197,7 +213,7 @@ async def sell(bot: Bot, items_for_sale: List[Item]):
                 items_with_id.append(item)
 
     for item in items_with_id:
-        await send_request_until_success(
+        await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/add-to-sale',
             {
@@ -213,7 +229,7 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     if not items_ordered:
         item = items_for_buy[0]
 
-        response = await send_request_until_success(
+        response = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/search-item-by-hash-name',
             {
@@ -235,7 +251,7 @@ async def buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
             print('in buy')
-            await send_request_until_success(
+            await send_request_to_market(
                 bot,
                 f'https://market.csgo.com/api/InsertOrder/{item.classid}/{item.instanceid}/{item.buy_for}//'
             )
@@ -342,7 +358,7 @@ async def delete_group(bot: Bot, group: ItemGroup):
 
 async def delete_orders(bot: Bot, ordered_items: List[Item]):
     for item in ordered_items:
-        await send_request_until_success(
+        await send_request_to_market(
             bot,
             f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/'
         )
@@ -351,7 +367,7 @@ async def delete_orders(bot: Bot, ordered_items: List[Item]):
 
 async def delete_sale_offers(bot, on_sale_items: List[Item]):
     for item in on_sale_items:
-        await send_request_until_success(
+        await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/set-price',
             {
