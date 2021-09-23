@@ -240,6 +240,8 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
     items_with_id = []
 
     # Добавляем market_id предметам, которые выставляем на продажу
+    # classid и instanceid имеются, так как мы продаём предметы, купленные и полученные ботом,
+    # который при
     for item in items_for_sale:
         for _item in inventory:
             if item.classid == int(_item['classid']) and item.instanceid == int(_item['instanceid']):
@@ -308,7 +310,7 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
                     return_error=True
                 )
                 if 'error' in response:
-                    log(f'error: {response.get("error")}')
+                    log(f'error during ordering: {response.get("error")}')
                     await item.update(state='for_buy')
                     return
             except Exception as e:

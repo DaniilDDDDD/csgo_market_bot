@@ -49,6 +49,7 @@ def help(update, context):
     result += list_bot.__doc__
     result += create_bot.__doc__
     result += set_bot_status.__doc__
+    result += update_bot_market_secret.__doc__
 
     result += list_item_group.__doc__
     result += create_item_group.__doc__
@@ -191,7 +192,7 @@ def set_bot_status(update, context):
     """
 /set_bot_status
     Установко боту нового статуса.
-    Принимает два аргумента:
+    Аргумаенты:
         <id> - id бота,
         <state> - новый статус бота.
     """
@@ -216,6 +217,38 @@ def set_bot_status(update, context):
     except AssertionError:
         context.bot.send_message(chat_id=update.effective_chat.id, text='Bot with this "id" does not exists!')
         return
+
+    context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
+
+
+def update_bot_market_secret(update, context):
+    """
+/update_bot_market_secret
+    Обновление скеретного ключа от API маркета.
+    Аргументы:
+        <id> - id бота,
+        <secret_key> - секретный ключ.
+    """
+
+    async def update_secret(
+            _id: int,
+            _secret_key: str
+    ) -> Bot:
+        _bot = await Bot.objects.get(id=_id)
+        assert _bot
+        await _bot.update(secret_key=_secret_key)
+        assert _bot.secret_key == _secret_key
+        return _bot
+
+    arguments = {
+        'id': '--',
+        'state': '--'
+    }
+    arguments = check_args(context, update, arguments)
+    if not arguments:
+        return
+
+    bot = asyncio.run(update_secret(**arguments))
 
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
 
@@ -538,6 +571,7 @@ market_bot_inventory_handler = CommandHandler('market_bot_inventory', market_bot
 list_bot_handler = CommandHandler('list_bot', list_bot)
 create_bot_handler = CommandHandler('create_bot', create_bot)
 set_bot_status_handler = CommandHandler('set_bot_status', set_bot_status)
+update_bot_market_secret_handler = CommandHandler('update_bot_market_secret', update_bot_market_secret)
 
 list_item_group_handler = CommandHandler('list_item_group', list_item_group)
 create_item_group_handler = CommandHandler('create_item_group', create_item_group)
