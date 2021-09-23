@@ -3,16 +3,43 @@ import pathlib
 import json
 import asyncio
 from dotenv import load_dotenv
+from functools import wraps
 
 from telegram.ext import CommandHandler
 
-from market.models import Bot, ItemGroup, Item
+from market.models import Bot, ItemGroup, Item, User
 from market.bot import send_request_to_market, hold_item, delete_item
 
 load_dotenv()
 
 bot_name = os.environ.get('BOT_NAME')
 basedir = pathlib.Path(__file__).parent.parent.absolute()
+
+
+def restriction(handler_function):
+    """
+    Проверяет, находится ли пользователь в списке дозволенных к обслуживанию.
+    """
+
+    async def _allowed_users() -> list:
+        """
+        Так как пользователей не много, то можно проходить по всем.
+        """
+        allowed_users = [int(os.environ.get('SUPERUSER'))]
+        users = list(await User.objects.values_list('id', flatten=True))
+        allowed_users.extend(users)
+        return allowed_users
+
+    @wraps(handler_function)
+    def wrapper(update, context):
+        user_id = update.effective_user.id
+        if user_id in asyncio.run(_allowed_users()):
+            handler_function(update, context)
+        else:
+            context.bot.send_message(chat_id=update.effective_chat.id, text='Boy next door!')
+            return
+
+    return wrapper
 
 
 def check_args(context, update, arguments: dict):
@@ -22,6 +49,8 @@ def check_args(context, update, arguments: dict):
             assert key_value[0] != '' and key_value[2] != ''
             key, value = key_value[0], key_value[2]
             if key in arguments:
+                if key == 'market_hash_name':
+                    value = value.replace('_', ' ')
                 arguments[key] = value
 
         for key, value in arguments.items():
@@ -33,6 +62,7 @@ def check_args(context, update, arguments: dict):
         return None
 
 
+@restriction
 def help(update, context):
     """
 /help
@@ -41,10 +71,14 @@ def help(update, context):
 
     result = f'Документация Бота {bot_name}.\n'
     result += 'Все функции принимают аргументы в виде <key>=<value>.\n'
-    result += 'Установлении цены она должна быть меньше самого дешёвого лота, выставленного на продажу!!!'
+    result += 'Установлении цены она должна быть меньше самого дешёвого лота, выставленного на продажу!!!\n\n'
 
     result += help.__doc__
     result += market_bot_inventory.__doc__
+
+    result += list_user.__doc__
+    result += add_user.__doc__
+    result += delete_user.__doc__
 
     result += list_bot.__doc__
     result += create_bot.__doc__
@@ -64,10 +98,16 @@ def help(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
 
 
+@restriction
 def start(update, context):
+    """
+/start
+    Бот работает лишь с заранее добавленными пользователями.
+    """
     context.bot.send_message(chat_id=update.effective_chat.id, text="I'm bot that abusing market.csgo!")
 
 
+@restriction
 def market_bot_inventory(update, context):
     """
 /market_bot_inventory
@@ -101,6 +141,76 @@ def market_bot_inventory(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=response.get('items'))
 
 
+@restriction
+def list_user(update, context):
+    """
+/list_user
+    Список пользователей бота.
+    """
+    users = asyncio.run(User.objects.all())
+
+    if len(users) <= 1:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='You are the only user except superuser!'
+        )
+        return
+
+    result = 'All users:\n\n'
+    for user in users:
+        result += str(user) + '\n\n'
+
+    context.bot.send_message(chat_id=update.effective_chat.id, text=result)
+
+
+@restriction
+def add_user(update, context):
+    """
+/add_user
+    Добавляет пользователя к обслуживаемым ботом.
+    Данная функция доступна только для суперпользователя.
+    Принимает один аргумент <id> - telegram id нового пользователя.
+    """
+
+    async def add_user_in_db(id: int) -> User:
+        return await User.objects.get_or_create(id=id)
+
+    if update.effective_user.id == int(os.environ.get('SUPERUSER')):
+        arguments = {
+            'id': '--'
+        }
+        arguments = check_args(context, update, arguments)
+        if not arguments:
+            return
+        user = asyncio.run(add_user_in_db(**arguments))
+        context.bot.send_message(chat_id=update.effective_chat.id, text=str(user))
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="You are not allowed to add users!")
+
+
+@restriction
+def delete_user(update, context):
+    """
+/delete_user
+    Удалить пользователя.
+    данная команда доступна лишь суперпользователю.
+    Принимает один аргумент <id> - telegram id удаляемого пользователя.
+    """
+
+    if update.effective_user.id == int(os.environ.get('SUPERUSER')):
+        arguments = {
+            'id': '--'
+        }
+        arguments = check_args(context, update, arguments)
+        if not arguments:
+            return
+        asyncio.run(User.objects.delete(**arguments))
+        context.bot.send_message(chat_id=update.effective_chat.id, text='User deleted!')
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="You are not allowed to delete users!")
+
+
+@restriction
 def list_bot(update, context):
     """
 /list_bot
@@ -120,6 +230,7 @@ def list_bot(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
 
 
+@restriction
 def create_bot(update, context):
     """
 /create_bot
@@ -188,6 +299,7 @@ def create_bot(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
 
 
+@restriction
 def set_bot_status(update, context):
     """
 /set_bot_status
@@ -221,6 +333,7 @@ def set_bot_status(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
 
 
+@restriction
 def update_bot_market_secret(update, context):
     """
 /update_bot_market_secret
@@ -253,6 +366,7 @@ def update_bot_market_secret(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
 
 
+@restriction
 def list_item_group(update, context):
     """
 /list_item_group
@@ -271,6 +385,7 @@ def list_item_group(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
 
 
+@restriction
 def create_item_group(update, context):
     """
 /create_item_group
@@ -278,7 +393,7 @@ def create_item_group(update, context):
     Принимает аргументыЖ
         <bot> - id бота, которому принадлежит данная группа,
         <state> - состояние ('active' по умолчанию),
-        <market_hash_name> - хэш-название предмета с маркета,
+        <market_hash_name> - хэш-название предмета с маркета (все пробелы заменить на '_'),
         <amount> - количество предметов в обороте
         <buy_for> - цена покупки предмета из этой грцппы,
         <sell_for> - цена продажи предмета из этой группы.
@@ -329,6 +444,7 @@ def create_item_group(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
 
 
+@restriction
 def set_item_group_state(update, context):
     """
 /set_item_group_state
@@ -361,6 +477,7 @@ def set_item_group_state(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
 
 
+@restriction
 def set_item_group_price(update, context):
     """
 /set_item_group_price
@@ -407,6 +524,7 @@ def set_item_group_price(update, context):
         return
 
 
+@restriction
 def list_item(update, context):
     """
 /list_item
@@ -426,17 +544,19 @@ def list_item(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
 
 
+@restriction
 def add_item_to_group(update, context):
     """
 /add_item_to_group
     Добавляет предмет к группе.
+
     Принимает аргументы:
         <item_group> - группа предметов,
         <state> - статус,
         <buy_for> - за столько покупать предмет,
         <sell_for> - за столько подавать предмет,
         <market_id> - id конкретного предемета с маркета,
-        <market_hash_name> - имя предмета,
+        <market_hash_name> - имя предмета (все пробелы заменить на '_'),
         <classid> - classid предмета,
         <instanceid> - instance id предмета.
     """
@@ -471,7 +591,7 @@ def add_item_to_group(update, context):
         'buy_for': '--',
         'sell_for': '--',
         'market_id': None,
-        'market_hash_name': None,
+        'market_hash_name': '--',
         'classid': None,
         'instanceid': None
     }
@@ -491,6 +611,7 @@ def add_item_to_group(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
 
 
+@restriction
 def set_item_state(update, context):
     """
 /set_item_state
@@ -526,6 +647,7 @@ def set_item_state(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
 
 
+@restriction
 def set_item_price(update, context):
     """
 /set_item_price
@@ -567,6 +689,11 @@ def set_item_price(update, context):
 start_handler = CommandHandler('start', start)
 help_handler = CommandHandler('help', help)
 market_bot_inventory_handler = CommandHandler('market_bot_inventory', market_bot_inventory)
+
+list_user_handler = CommandHandler('list_user', list_user)
+add_user_handler = CommandHandler('add_user', add_user)
+delete_user_handler = CommandHandler('delete_user', delete_user)
+
 
 list_bot_handler = CommandHandler('list_bot', list_bot)
 create_bot_handler = CommandHandler('create_bot', create_bot)

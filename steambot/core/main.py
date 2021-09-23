@@ -3,16 +3,17 @@ from databases import Database
 
 from core.database import database, metadata, engine
 
-from market.background_tasks import trades_confirmation, bots_states_check
+from market.background_tasks import give_items, take_items, bots_states_check, update_orders_price
+from telegram_bot.bot import updater
 
 
 async def main():
     """Все асинхронные задачи"""
-    task_trades = asyncio.create_task(trades_confirmation())
-    task_states_check = asyncio.create_task(bots_states_check())
 
-    await task_trades
-    await task_states_check
+    await bots_states_check()
+    await take_items()
+    await give_items()
+    await update_orders_price()
 
 
 async def database_connect(db: Database):
@@ -28,7 +29,12 @@ async def database_disconnect(db: Database):
 if __name__ == '__main__':
     """Инициализация базы данных"""
     metadata.create_all(engine)
-    database.connect()
+
+    asyncio.run(database_connect(database))
+
+    updater.start_polling()
+
     # запуск параллельных задач
+    # TODO: проверить, запускаются ли фоновые задачи
     asyncio.run(main())
     # database.disconnect()

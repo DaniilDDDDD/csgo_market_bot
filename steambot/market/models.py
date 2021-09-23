@@ -88,8 +88,19 @@ class Item(ormar.Model):
     def __str__(self):
         return f"Market item id is {self.id}.\n" \
                f"Item state is {self.state}.\n" \
-               f"Item's market hash name is {getattr(self, 'market_hash_name', 'None')}" \
+               f"Item's market hash name is {getattr(self, 'market_hash_name', 'None')}\n" \
                f"Item belongs to group of items with id {self.item_group.id}.\n" \
                f"Item would be bought for {self.ordered_for} and sold for {self.sell_for}.\n" \
                f"If item is bought it's id on market is {getattr(self, 'market_id', 'None')}, " \
                f"classid is {getattr(self, 'classid', 'None')}, instanceid is {getattr(self, 'instanceid', 'None')}."
+
+
+class User(ormar.Model):
+    class Meta:
+        metadata = metadata
+        database = database
+
+    id: int = ormar.Integer(primary_key=True)
+
+    def __str__(self):
+        return f"User, with id {self.id} allowed to control bot."
