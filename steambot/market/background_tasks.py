@@ -25,9 +25,12 @@ async def bots_states_check():
 
         bots = await Bot.objects.exclude(state__in=['in_circle', 'paused']).all()
 
+        log('In bots_states_check')
+
         tasks = []
 
         for bot in bots:
+            log(f'Bot {bot.id}')
             if bot.state == 'circle_ended':
                 tasks.append(asyncio.create_task(bot_work(bot)))
 
@@ -57,6 +60,8 @@ async def bots_states_check():
 
         for task in tasks:
             await task
+
+        await asyncio.sleep(10)
 
 
 async def bot_delete(bot: Bot):
@@ -103,6 +108,9 @@ async def update_orders_price():
     то обновляему ордер, чтобы наш был дороже, дабы ордер был удовлетворён ранее
     """
     while True:
+
+        log('In update_orders_price')
+
         items = await Item.objects.select_related(Item.item_group.bot).filter(state='ordered').all()
         await asyncio.sleep(10)
 
@@ -221,7 +229,6 @@ async def give_items():
     """
 
     async def send_trades(_bot: Bot):
-        log('In give_items')
 
         steam_client = await get_bot_steam_client(_bot)
 
@@ -270,6 +277,8 @@ async def give_items():
                 log(_e)
 
     while True:
+
+        log('In give_items')
 
         bots = await Bot.objects.exclude(state='destroyed').all()
         for bot in bots:

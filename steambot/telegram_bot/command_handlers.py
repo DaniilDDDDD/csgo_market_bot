@@ -566,7 +566,7 @@ def add_item_to_group(update, context):
             buy_for: int,
             sell_for: int,
             state: str,
-            market_id: int = None,
+            market_id: str = None,
             market_hash_name: str = None,
             classid: str = None,
             instanceid: str = None

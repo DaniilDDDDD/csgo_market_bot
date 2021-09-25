@@ -80,8 +80,8 @@ class Item(ormar.Model):
     ordered_for: int = ormar.Integer(nullable=True, minimum=1)
 
     # Данные маркета
-    market_id: int = ormar.Integer(nullable=True, unique=True)
-    market_hash_name: str = ormar.String(nullable=True, max_length=1000)
+    market_id: str = ormar.String(max_length=200, nullable=True, unique=True)
+    market_hash_name: str = ormar.String(max_length=1000, nullable=True)
     classid: str = ormar.String(max_length=200, nullable=True)
     instanceid: str = ormar.String(max_length=200, nullable=True)
 

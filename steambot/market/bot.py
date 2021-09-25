@@ -188,6 +188,8 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         for item in items_list:
             items[item.state].append(item)
 
+        log(items)
+
         task_sell = asyncio.create_task(_sell(
             bot, items['for_sale']
         ))
@@ -196,8 +198,8 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
             bot, items['for_buy'], items['ordered']
         ))
 
-        await task_sell
         await task_buy
+        await task_sell
 
     if group.state == 'sell':
         task_sell_all = asyncio.create_task(_sell_group(bot, group))
@@ -227,6 +229,9 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
     Берём id предмета из инвентаря.
     """
 
+    log('In sell')
+
+    log('My inventory')
     try:
         inventory = await send_request_to_market(
             bot,
@@ -240,11 +245,10 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
     items_with_id = []
 
     # Добавляем market_id предметам, которые выставляем на продажу
-    # classid и instanceid имеются, так как мы продаём предметы, купленные и полученные ботом,
-    # который при
+    # classid и instanceid имеются, так как мы продаём предметы, купленные и полученные ботом
     for item in items_for_sale:
         for _item in inventory:
-            if item.classid == int(_item['classid']) and item.instanceid == int(_item['instanceid']):
+            if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
                 await item.update(market_id=_item['id'], state='on_sale')
                 items_with_id.append(item)
 
@@ -263,7 +267,8 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
             try:
                 await send_request_to_market(
                     bot,
-                    'https://market.csgo.com/api/v2/update-inventory/'
+                    'https://market.csgo.com/api/v2/update-inventory/',
+                    error_recursion=True
                 )
                 await asyncio.sleep(20)
                 await _sell(bot, items_with_id)
@@ -275,7 +280,7 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
 
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
-    if not items_ordered:
+    if not items_ordered and items_for_buy:
         item = items_for_buy[0]
 
         response = await send_request_to_market(
