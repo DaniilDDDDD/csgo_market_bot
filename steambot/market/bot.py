@@ -229,6 +229,8 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
     Берём id предмета из инвентаря.
     """
 
+    # TODO: продавать по наименьшей цене из выложенных другими пользоветелями
+
     log('In sell')
 
     log('My inventory')
@@ -280,6 +282,9 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
 
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
+
+    # TODO: если можно купить предмет по цене ордера, то не заказывать его, а покупать
+
     if not items_ordered and items_for_buy:
         item = items_for_buy[0]
 
