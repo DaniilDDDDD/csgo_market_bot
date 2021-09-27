@@ -70,32 +70,21 @@ async def send_request_to_market(
 
     try:
 
-        if not return_error:
-            while not success:
-                await ping(bot, session)
-                response = session.get(url=url, params=params).json()
-                log('in response')
-                log(response)
-                success = response.get('success', False)
-                if not success:
-                    await asyncio.sleep(10)
-            return response
-
-        else:
-            while not success:
-                await ping(bot, session)
-                response = session.get(url=url, params=params).json()
-                if 'error' in response:
-                    return response
-                log('in response')
-                log(response)
-                success = response.get('success', False)
-                if not success:
-                    await asyncio.sleep(10)
+        while not success:
+            await ping(bot, session)
+            response = session.get(url=url, params=params).json()
+            if 'error' in response and return_error:
                 return response
+            log('in response')
+            log(response)
+            success = response.get('success', False)
+            if not success:
+                await asyncio.sleep(10)
+            return response
 
     except Exception as e:
         if error_recursion:
+            log(e)
             await asyncio.sleep(10)
             await send_request_to_market(bot, url, params, return_error, error_recursion)
         else:
@@ -190,12 +179,12 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
 
         log(items)
 
-        task_sell = asyncio.create_task(_sell(
-            bot, items['for_sale']
-        ))
-
         task_buy = asyncio.create_task(_buy(
             bot, items['for_buy'], items['ordered']
+        ))
+
+        task_sell = asyncio.create_task(_sell(
+            bot, items['for_sale']
         ))
 
         await task_buy
@@ -229,55 +218,69 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
     Берём id предмета из инвентаря.
     """
 
-    # TODO: продавать по наименьшей цене из выложенных другими пользоветелями
+    if items_for_sale:
 
-    log('In sell')
+        log('in sell')
 
-    log('My inventory')
-    try:
-        inventory = await send_request_to_market(
-            bot,
-            'https://market.csgo.com/api/v2/my-inventory/'
-        )
-        inventory = inventory.get('items', [])
-    except Exception as e:
-        log(e)
-        return
+        log('my inventory')
+        try:
+            inventory = await send_request_to_market(
+                bot,
+                'https://market.csgo.com/api/v2/my-inventory/'
+            )
+            inventory = inventory.get('items', [])
+        except Exception as e:
+            log(e)
+            return
 
-    items_with_id = []
+        items_with_id = []
 
-    # Добавляем market_id предметам, которые выставляем на продажу
-    # classid и instanceid имеются, так как мы продаём предметы, купленные и полученные ботом
-    for item in items_for_sale:
-        for _item in inventory:
-            if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
-                await item.update(market_id=_item['id'], state='on_sale')
-                items_with_id.append(item)
+        # Добавляем market_id предметам, которые выставляем на продажу
+        # classid и instanceid имеются, так как мы продаём предметы, купленные и полученные ботом
+        for item in items_for_sale:
+            for _item in inventory:
+                if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
+                    await item.update(market_id=_item['id'], state='on_sale')
+                    items_with_id.append(item)
 
-    for item in items_with_id:
-        response = await send_request_to_market(
-            bot,
-            'https://market.csgo.com/api/v2/add-to-sale',
-            {
-                'id': item.market_id,
-                'price': item.sell_for,
-                'cur': 'RUB'
-            },
-            return_error=True
-        )
-        if 'error' in response:
-            try:
+        log('items with ids:')
+        log(items_with_id)
+
+        for item in items_with_id:
+
+            log('item sell with update price')
+
+            # цена формируется на основании цены других предметов
+            # (цена саого дешёвого предмета уменьшается на 1)
+            response = await send_request_to_market(
+                bot,
+                'https://market.csgo.com/api/v2/search-item-by-hash-name',
+                {
+                    'hash_name': item.market_hash_name
+                },
+                error_recursion=True
+            )
+
+            await item.update(sell_for=(response['data'][0]['price'] - 1))
+
+            response = await send_request_to_market(
+                bot,
+                'https://market.csgo.com/api/v2/add-to-sale',
+                {
+                    'id': item.market_id,
+                    'price': item.sell_for,
+                    'cur': 'RUB'
+                },
+                return_error=True
+            )
+            if 'error' in response:
                 await send_request_to_market(
                     bot,
                     'https://market.csgo.com/api/v2/update-inventory/',
                     error_recursion=True
                 )
                 await asyncio.sleep(20)
-                await _sell(bot, items_with_id)
-            except Exception as e:
-                log(e)
-                for _item in items_for_sale:
-                    await _item.update(state='for_sale')
+                await _sell(bot, [item])
 
 
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
@@ -296,20 +299,32 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             },
             error_recursion=True
         )
+        item_info = response.get('data')[0]
+
+        response = await send_request_to_market(
+            bot,
+            f"https://market.csgo.com/api/BestBuyOffer/{item_info.get('class')}_{item_info.get('instance')}/",
+            error_recursion=True,
+            return_error=True
+        )
+        if 'error' in response:
+            _buy_for = item_info.get('price') * 0.80
+
+        else:
+            best_offer = int(response.get('best_offer'))
+            if best_offer < item_info.get('price') * 0.80:
+                _buy_for = best_offer + 1
+            else:
+                _buy_for = item_info.get('price') * 0.80
 
         # Берём первый, самый дешёвый предмет
-        response = response.get('data')[0]
-        if item.sell_for is None or item.buy_for is None:
-            await item.update(
-                classid=response.get('class'),
-                instanceid=response.get('instance'),
-                sell_for=response.get('price'),
-                buy_for=response.get('price') * 0.87,
-                ordered_for=response.get('price') * 0.87,
-                state='ordered'
-            )
-        else:
-            await item.update(classid=response.get('class'), instanceid=response.get('instance'), state='ordered')
+        await item.update(
+            classid=item_info.get('class'),
+            instanceid=item_info.get('instance'),
+            buy_for=_buy_for,
+            ordered_for=_buy_for,
+            state='ordered'
+        )
 
         if await bot_balance(bot) * 100 - item.buy_for >= 100:
             log('in buy')
@@ -327,6 +342,8 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
                 log(e)
                 await item.update(state='for_buy')
                 return
+        else:
+            await item.update(state='for_buy')
 
 
 async def _sell_group(bot: Bot, group: ItemGroup):
