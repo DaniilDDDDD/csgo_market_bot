@@ -124,17 +124,28 @@ async def update_orders_price():
                 )
                 best_offer = int(response.get('best_offer'))
 
+                response = await send_request_to_market(
+                    item.item_group.bot,
+                    'https://market.csgo.com/api/v2/search-item-by-hash-name',
+                    {
+                        'hash_name': item.market_hash_name
+                    },
+                    error_recursion=True
+                )
+                item.sell_for = response['data'][0]['price'] - 1
+
                 if (
                         best_offer >= item.ordered_for
-                        and (best_offer + 1) < item.sell_for * 0.90
+                        and (best_offer + 1) < (item.sell_for // 100) * 90
                         and (best_offer + 1) < await bot_balance(item.item_group.bot) * 100
                 ) or (
                         # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
                         # исходящего не от нас и отличающегося от нашего холтя бы на 3%,
                         # сменяем цену на цену этого ордера + 1
-                        item.ordered_for - best_offer > item.sell_for * 0.03
+                        item.ordered_for - best_offer > (item.sell_for // 100) * 3
                         and item.sell_for > 50000
                 ):
+                    log('in update order')
                     response = await send_request_to_market(
                         item.item_group.bot,
                         f'https://market.csgo.com/api/UpdateOrder/'
@@ -145,7 +156,7 @@ async def update_orders_price():
                         log(f'order with item with id {item.id} can not be changed now')
                         await asyncio.sleep(20)
                         continue
-                    await item.update(ordered_for=(best_offer + 1))
+                    await item.update(ordered_for=(best_offer + 1), sell_for=item.sell_for)
 
             except Exception as e:
                 log(e)
@@ -199,10 +210,10 @@ async def take_items():
             # если донат, то принимаем (так как при покупке от нас не требуется никаких предметов)
             if is_donation(offer):
                 steam_client.accept_trade_offer(offer['tradeofferid'])
-                for i in offer['items_to_receive']:
+                for key, value in offer['items_to_receive'].items():
                     # обновляем базу данных, выставляя статусы для купленных вещей
                     # (for_sale, потому что продаются лишь обмениваемые вещи)
-                    item = await Item.objects.get(classid=i['classid'], instanceid=i['instanceid'])
+                    item = await Item.objects.get_or_none(classid=value['classid'], instanceid=value['instanceid'])
                     if item:
                         await item.update(state='for_sale')
 
@@ -272,7 +283,11 @@ async def give_items():
 
                 for item in response.get('items', []):
                     if item.get('status') == '2':
-                        _item = await Item.objects.get(classid=item.get('classid'), instanceid=item.get('instanceid'))
+                        _item = await Item.objects.get(
+                            classid=item.get('classid'),
+                            instanceid=item.get('instanceid'),
+                            market_hash_name=item.get('market_hash_name')
+                        )
                         await _item.update(state='for_buy')
             except Exception as _e:
                 log(_e)

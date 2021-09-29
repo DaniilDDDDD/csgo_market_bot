@@ -40,7 +40,6 @@ if __name__ == '__main__':
     updater.start_polling()
 
     # запуск параллельных задач
-    # TODO: проверить, запускаются ли фоновые задачи
     asyncio.run(main())
 
     # database.disconnect()

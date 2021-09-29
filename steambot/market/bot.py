@@ -240,7 +240,7 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
         for item in items_for_sale:
             for _item in inventory:
                 if item.classid == _item['classid'] and item.instanceid == _item['instanceid']:
-                    await item.update(market_id=_item['id'], state='on_sale')
+                    item.market_id = _item['id']
                     items_with_id.append(item)
 
         log('items with ids:')
@@ -261,7 +261,11 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
                 error_recursion=True
             )
 
-            await item.update(sell_for=(response['data'][0]['price'] - 1))
+            await item.update(
+                state='on_sale',
+                market_id=item.market_id,
+                sell_for=(response['data'][0]['price'] - 1)
+            )
 
             response = await send_request_to_market(
                 bot,
@@ -279,8 +283,7 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
                     'https://market.csgo.com/api/v2/update-inventory/',
                     error_recursion=True
                 )
-                await asyncio.sleep(20)
-                await _sell(bot, [item])
+                await item.update(state='for_sale')
 
 
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
@@ -307,20 +310,21 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             return_error=True
         )
         if 'error' in response:
-            _buy_for = item_info.get('price') * 0.80
+            _buy_for = (item_info.get('price') // 100) * 80
 
         else:
             best_offer = int(response.get('best_offer'))
-            if best_offer < item_info.get('price') * 0.80:
+            if best_offer < (item_info.get('price') // 100) * 80:
                 _buy_for = best_offer + 1
             else:
-                _buy_for = item_info.get('price') * 0.80
+                _buy_for = (item_info.get('price') // 100) * 80
 
         await item.update(
             classid=item_info.get('class'),
             instanceid=item_info.get('instance'),
             buy_for=_buy_for,
             ordered_for=_buy_for,
+            sell_for=(item_info.get('price') - 1),
             state='ordered'
         )
 

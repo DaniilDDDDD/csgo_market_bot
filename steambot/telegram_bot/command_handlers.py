@@ -115,8 +115,8 @@ def market_bot_inventory(update, context):
         <id> - id бота.
     """
 
-    async def get_bot(_id: int) -> Bot:
-        _bot = await Bot.objects.get(id=_id)
+    async def get_bot(id: int) -> Bot:
+        _bot = await Bot.objects.get(id=id)
         assert _bot
         return _bot
 
@@ -136,7 +136,7 @@ def market_bot_inventory(update, context):
     response = asyncio.run(send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
-    )).json()
+    ))
     context.bot.send_message(chat_id=update.effective_chat.id, text=response.get('items'))
 
 
@@ -400,7 +400,7 @@ def create_item_group(update, context):
             bot: int,
             amount: int,
             market_hash_name: str = None,
-            state: str = 'disabled'
+            state: str = 'active'
     ) -> ItemGroup:
         _bot = await Bot.objects.get(id=bot)
         assert _bot
@@ -421,7 +421,7 @@ def create_item_group(update, context):
 
     arguments = {
         'bot': '--',
-        'state': 'disabled',
+        'state': 'active',
         'amount': 1,
         'market_hash_name': None
     }
@@ -440,8 +440,8 @@ def set_item_group_state(update, context):
 /set_item_group_state
     Установка группе предметов нового статуса.
     Принимает два аргумента:
-        <id> - id бота,
-        <state> - новый статус бота.
+        <id> - id группы,
+        <state> - новый статус группы.
     """
 
     async def set_item_group_state_in_db(id: int, state: str) -> ItemGroup:
