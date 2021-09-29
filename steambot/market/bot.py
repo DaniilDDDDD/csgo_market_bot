@@ -206,7 +206,7 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         await group.update(state='disabled')
 
     if group.state == 'delete':
-        task_delete_group = asyncio.create_task(_delete_group(bot, group))
+        task_delete_group = asyncio.create_task(delete_group(bot, group))
         await task_delete_group
 
     await bot.update(state='circle_ended')
@@ -286,8 +286,6 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
     """Создание ордера на покупку первого (из доступных) вещей (Item) если на балансе хватает денег"""
 
-    # TODO: если можно купить предмет по цене ордера, то не заказывать его, а покупать
-
     if not items_ordered and items_for_buy:
         item = items_for_buy[0]
 
@@ -299,6 +297,7 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             },
             error_recursion=True
         )
+        # Берём первый, самый дешёвый предмет
         item_info = response.get('data')[0]
 
         response = await send_request_to_market(
@@ -317,7 +316,6 @@ async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
             else:
                 _buy_for = item_info.get('price') * 0.80
 
-        # Берём первый, самый дешёвый предмет
         await item.update(
             classid=item_info.get('class'),
             instanceid=item_info.get('instance'),
@@ -418,7 +416,7 @@ async def _hold_group(bot: Bot, group: ItemGroup):
         await item.update(state='hold')
 
 
-async def _delete_group(bot: Bot, group: ItemGroup):
+async def delete_group(bot: Bot, group: ItemGroup):
     items_list = await Item.objects.filter(item_group=group).exclude(state='hold').all()
     items = {
         'ordered': [],
@@ -487,29 +485,23 @@ async def _delete_sale_offers(bot, on_sale_items: List[Item]):
 
 async def hold_item(item: Item):
     if item.state == 'ordered':
-        task_delete_order = asyncio.create_task(_delete_orders(
+        await _delete_orders(
             item.item_group.bot, [item]
-        ))
-        await task_delete_order
+        )
     elif item.state == 'on_sale':
-        task_delete_offer = asyncio.create_task(_delete_sale_offers(
+        await _delete_sale_offers(
             item.item_group.bot, [item]
-        ))
-        await task_delete_offer
+        )
     await item.update(state='hold')
 
 
 async def delete_item(item: Item):
-    if item.state == 'hold':
-        return
     if item.state == 'ordered':
-        task_delete_order = asyncio.create_task(_delete_orders(
+        await _delete_orders(
             item.item_group.bot, [item]
-        ))
-        await task_delete_order
+        )
     elif item.state == 'on_sale':
-        task_delete_offer = asyncio.create_task(_delete_sale_offers(
+        await _delete_sale_offers(
             item.item_group.bot, [item]
-        ))
-        await task_delete_offer
+        )
     await item.delete()

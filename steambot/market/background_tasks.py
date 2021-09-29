@@ -5,7 +5,7 @@ from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work, send_request_to_market, bot_balance, log
+from .bot import bot_work, send_request_to_market, bot_balance, log, delete_group
 
 game = GameOptions.CS
 steam_clients = {}
@@ -69,8 +69,8 @@ async def bot_delete(bot: Bot):
     steam_client.logout()
     steam_clients.pop(bot.id)
     groups = await ItemGroup.objects.filter(bot=bot).all()
-    await Item.objects.delete(item_group__in=groups)
-    await ItemGroup.objects.delete(bot=bot)
+    for group in groups:
+        await delete_group(bot, group)
     try:
         await send_request_to_market(
             bot,
@@ -97,6 +97,7 @@ async def bot_buy(bot: Bot):
 
 async def bot_hold(bot: Bot):
     groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).all()
+
     for group in groups:
         await group.update(state='hold')
 
@@ -232,7 +233,7 @@ async def give_items():
 
         steam_client = await get_bot_steam_client(_bot)
 
-        # используется отдельный запрос к market.csgo, так как при отсутствии предметоа на передачу возвращается ошибка
+        # используется отдельный запрос к market.csgo, так как при отсутствии предметов на передачу возвращается ошибка
 
         response = await send_request_to_market(
             _bot,
