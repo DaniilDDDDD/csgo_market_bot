@@ -448,7 +448,7 @@ async def delete_group(bot: Bot, group: ItemGroup):
 
 async def _delete_orders(bot: Bot, ordered_items: List[Item]):
     for item in ordered_items:
-
+        log(f'in delete orders for item with id {item.id}')
         response = await send_request_to_market(
             bot,
             f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/',

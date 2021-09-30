@@ -116,7 +116,7 @@ def market_bot_inventory(update, context):
     """
 
     async def get_bot(id: int) -> Bot:
-        _bot = await Bot.objects.get(id=id)
+        _bot = await Bot.objects.get_or_none(id=id)
         assert _bot
         return _bot
 
@@ -309,7 +309,7 @@ def set_bot_status(update, context):
     """
 
     async def change_bot_state_in_db(id: int, state: str) -> Bot:
-        _bot = await Bot.objects.get(id=id)
+        _bot = await Bot.objects.get_or_none(id=id)
         assert _bot
         await _bot.update(state=state)
         return _bot
@@ -346,10 +346,9 @@ def update_bot_market_secret(update, context):
             _id: int,
             _secret_key: str
     ) -> Bot:
-        _bot = await Bot.objects.get(id=_id)
+        _bot = await Bot.objects.get_or_none(id=_id)
         assert _bot
         await _bot.update(secret_key=_secret_key)
-        assert _bot.secret_key == _secret_key
         return _bot
 
     arguments = {
@@ -402,7 +401,7 @@ def create_item_group(update, context):
             market_hash_name: str = None,
             state: str = 'active'
     ) -> ItemGroup:
-        _bot = await Bot.objects.get(id=bot)
+        _bot = await Bot.objects.get_or_none(id=bot)
         assert _bot
         _group = await ItemGroup.objects.get_or_create(
             bot=_bot,
@@ -445,7 +444,7 @@ def set_item_group_state(update, context):
     """
 
     async def set_item_group_state_in_db(id: int, state: str) -> ItemGroup:
-        _group = await ItemGroup.objects.get(id=id)
+        _group = await ItemGroup.objects.get_or_none(id=id)
         assert _group
         await _group.update(state=state)
         return _group
@@ -534,7 +533,7 @@ def add_item_to_group(update, context):
             classid: str = None,
             instanceid: str = None
     ) -> Item:
-        _group = await ItemGroup.objects.get(id=item_group)
+        _group = await ItemGroup.objects.get_or_none(id=item_group)
         assert _group
         _item = await Item.objects.create(
             item_group=_group,
@@ -587,19 +586,22 @@ def set_item_state(update, context):
         return
 
     try:
-        item = asyncio.run(Item.objects.get(id=int(arguments['id'])))
+        item = asyncio.run(Item.objects.select_related(Item.item_group.bot).get_or_none(id=int(arguments['id'])))
         assert item
-        asyncio.run(item.update(state=arguments['state']))
-        assert item.state == arguments['state']
+
+        if arguments['state'] == 'hold':
+            asyncio.run(hold_item(item))
+
+        elif arguments['state'] == 'delete':
+            asyncio.run(delete_item(item))
+            item.state = 'delete'
+
+        else:
+            asyncio.run(item.update(state=arguments['state']))
+
     except AssertionError:
         context.bot.send_message(chat_id=update.effective_chat.id, text='Item with this "id" does not exists!')
         return
-
-    if arguments['state'] == 'hold':
-        asyncio.run(hold_item(item))
-
-    if arguments['state'] == 'delete':
-        asyncio.run(delete_item(item))
 
     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
 
