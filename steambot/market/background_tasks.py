@@ -260,6 +260,13 @@ async def give_items():
 
         if offers:
 
+            # обновляем статусы проданых (переданных) предметов
+            response = await send_request_to_market(
+                _bot,
+                'https://market.csgo.com/api/v2/items',
+                error_recursion=True
+            )
+
             for offer in offers:
                 try:
                     steam_client.make_offer_with_url(
@@ -271,26 +278,15 @@ async def give_items():
                     )
                 except Exception as _e:
                     log(_e)
-                    continue
 
-            # обновляем статусы проданых (переданных) предметов
-            try:
-                response = await send_request_to_market(
-                    _bot,
-                    'https://market.csgo.com/api/v2/items',
-                    error_recursion=True
-                )
-
-                for item in response.get('items', []):
-                    if item.get('status') == '2':
-                        _item = await Item.objects.get(
-                            classid=item.get('classid'),
-                            instanceid=item.get('instanceid'),
-                            market_hash_name=item.get('market_hash_name')
-                        )
-                        await _item.update(state='for_buy')
-            except Exception as _e:
-                log(_e)
+            for item in response.get('items', []):
+                if item.get('status') == '2':
+                    _item = await Item.objects.get(
+                        classid=item.get('classid'),
+                        instanceid=item.get('instanceid'),
+                        market_hash_name=item.get('market_hash_name')
+                    )
+                    await _item.update(state='for_buy')
 
     while True:
 
