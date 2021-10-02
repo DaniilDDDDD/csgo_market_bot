@@ -396,13 +396,11 @@ def create_item_group(update, context):
     Принимает аргументы:
         <bot> - id бота, которому принадлежит данная группа,
         <state> - состояние ('active' по умолчанию),
-        <market_hash_name> - хэш-название предмета с маркета (все пробелы заменить на '_'),
-        <amount> - количество предметов в обороте.
+        <market_hash_name> - хэш-название предмета с маркета (все пробелы заменить на '_').
     """
 
     async def create_item_group_in_db(
             bot: int,
-            amount: int,
             market_hash_name: str = None,
             state: str = 'active'
     ) -> ItemGroup:
@@ -414,19 +412,11 @@ def create_item_group(update, context):
             market_hash_name=market_hash_name
         )
         assert _group
-        for i in range(int(amount)):
-            _item = await Item.objects.create(
-                item_group=_group,
-                state='for_buy',
-                market_hash_name=market_hash_name
-            )
-            assert _item
         return _group
 
     arguments = {
         'bot': '--',
         'state': 'active',
-        'amount': 1,
         'market_hash_name': None
     }
     arguments = check_args(context, update, arguments)

@@ -167,7 +167,6 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
     await bot.update(state='in_circle')
 
     if group.state == 'active':
-
         task_buy = asyncio.create_task(_group_buy(bot, group))
 
         task_sell = asyncio.create_task(_sell(
@@ -248,20 +247,15 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
                 error_recursion=True
             )
 
-            await item.update(
-                state='on_sale',
-                market_id=item.market_id,
-                sell_for=(response['data'][0]['price'] - 1)
-            )
-
             response = await send_request_to_market(
                 bot,
                 'https://market.csgo.com/api/v2/add-to-sale',
                 {
                     'id': item.market_id,
-                    'price': item.sell_for,
+                    'price': (response['data'][0]['price'] - 1),
                     'cur': 'RUB'
                 },
+                error_recursion=True,
                 return_error=True
             )
             if 'error' in response:
@@ -271,6 +265,12 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
                     error_recursion=True
                 )
                 await item.update(state='for_sale')
+            else:
+                await item.update(
+                    state='on_sale',
+                    market_id=item.market_id,
+                    sell_for=(response['data'][0]['price'] - 1)
+                )
 
 
 async def _buy(bot: Bot, items_for_buy: List[Item], items_ordered: List[Item]):
@@ -350,55 +350,53 @@ async def _group_buy(bot: Bot, group: ItemGroup):
         return
 
     for i in items['data']:
-        item = await Item.objects.get_or_none(classid=i['class'], instance=i['instance'])
+        item = await Item.objects.get_or_none(classid=i['class'], instanceid=i['instance'], state='for_buy')
 
-        if not item or item.state == 'for_buy':
+        response = await send_request_to_market(
+            bot,
+            f"https://market.csgo.com/api/BestBuyOffer/{i['class']}_{i['instance']}/",
+            error_recursion=True,
+            return_error=True
+        )
+        if 'error' in response:
+            _buy_for = (i.get('price') // 100) * 80
 
-            response = await send_request_to_market(
-                bot,
-                f"https://market.csgo.com/api/BestBuyOffer/{i['class']}_{i['instance']}/",
-                error_recursion=True,
-                return_error=True
-            )
-            if 'error' in response:
+        else:
+            best_offer = int(response.get('best_offer'))
+            if best_offer < (i.get('price') // 100) * 80:
+                _buy_for = best_offer + 1
+            else:
                 _buy_for = (i.get('price') // 100) * 80
 
-            else:
-                best_offer = int(response.get('best_offer'))
-                if best_offer < (i.get('price') // 100) * 80:
-                    _buy_for = best_offer + 1
-                else:
-                    _buy_for = (i.get('price') // 100) * 80
+        if await bot_balance(bot) * 100 - _buy_for >= 100:
+            try:
+                response = await send_request_to_market(
+                    bot,
+                    f"https://market.csgo.com/api/InsertOrder/{i['class']}/{i['instance']}/{_buy_for}//",
+                    return_error=True
+                )
 
-            if await bot_balance(bot) * 100 - _buy_for >= 100:
-                try:
-                    response = await send_request_to_market(
-                        bot,
-                        f"https://market.csgo.com/api/InsertOrder/{i['class']}/{i['instance']}/{_buy_for}//",
-                        return_error=True
-                    )
-
-                    if 'error' in response:
-                        log(f'error during ordering: {response.get("error")}')
-                        continue
-
-                    else:
-                        if not item:
-                            await Item.objects.create(
-                                item_group=group,
-                                market_hash_name=group.market_hash_name,
-                                classid=i['class'],
-                                instance=i['instance'],
-                                state='ordered',
-                                buy_for=_buy_for,
-                                ordered_for=_buy_for
-                            )
-                        elif item.state == 'for_buy':
-                            await item.update(buy_for=_buy_for, ordered_for=_buy_for, state='ordered')
-
-                except Exception as e:
-                    log(e)
+                if 'error' in response:
+                    log(f'error during ordering: {response.get("error")}')
                     continue
+
+                else:
+                    if not item:
+                        await Item.objects.create(
+                            item_group=group,
+                            market_hash_name=group.market_hash_name,
+                            classid=i['class'],
+                            instanceid=i['instance'],
+                            state='ordered',
+                            buy_for=_buy_for,
+                            ordered_for=_buy_for
+                        )
+                    else:
+                        await item.update(state='ordered', buy_for=_buy_for, ordered_for=_buy_for)
+
+            except Exception as e:
+                log(e)
+                continue
 
 
 async def _sell_group(bot: Bot, group: ItemGroup):
@@ -435,15 +433,13 @@ async def _buy_group(bot: Bot, group: ItemGroup):
     for item in items_list:
         items[item.state].append(item)
 
-    task_buy = asyncio.create_task(_buy(
-        bot, items['for_buy'], items['ordered']
-    ))
+    task_buy_group = asyncio.create_task(_group_buy(bot, group))
 
     task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
         bot, items['on_sale']
     ))
 
-    await task_buy
+    await task_buy_group
     await task_delete_sale_offers
 
 

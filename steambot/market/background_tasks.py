@@ -281,20 +281,23 @@ async def give_items():
 
             for item in response.get('items', []):
                 if item.get('status') == '2':
-                    _item = await Item.objects.get(
+                    _item = await Item.objects.delete(
                         classid=item.get('classid'),
                         instanceid=item.get('instanceid'),
                         market_hash_name=item.get('market_hash_name')
                     )
-                    await _item.update(state='for_buy')
 
     while True:
 
         log('In give_items')
 
         bots = await Bot.objects.exclude(state='destroyed').all()
+        tasks = []
         for bot in bots:
-            await send_trades(bot)
+            tasks.append(asyncio.create_task(send_trades(bot)))
+
+        for task in tasks:
+            await task
 
         log('Inventory update')
         for bot in bots:
