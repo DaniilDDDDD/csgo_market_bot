@@ -136,13 +136,13 @@ async def update_orders_price():
 
                 if (
                         best_offer >= item.ordered_for
-                        and (best_offer + 1) < (item.sell_for // 100) * 90
+                        and (best_offer + 1) < int(item.sell_for * 0.9)
                         and (best_offer + 1) < await bot_balance(item.item_group.bot) * 100
                 ) or (
                         # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
                         # исходящего не от нас и отличающегося от нашего холтя бы на 3%,
                         # сменяем цену на цену этого ордера + 1
-                        item.ordered_for - best_offer > (item.sell_for // 100) * 3
+                        item.ordered_for - best_offer > int(item.sell_for * 0.03)
                         and item.sell_for > 50000
                 ):
                     log('in update order')
@@ -244,8 +244,6 @@ async def give_items():
 
         steam_client = await get_bot_steam_client(_bot)
 
-        # используется отдельный запрос к market.csgo, так как при отсутствии предметов на передачу возвращается ошибка
-
         response = await send_request_to_market(
             _bot,
             'https://market.csgo.com/api/v2/trade-request-give-p2p-all',
@@ -281,7 +279,7 @@ async def give_items():
 
             for item in response.get('items', []):
                 if item.get('status') == '2':
-                    _item = await Item.objects.delete(
+                    await Item.objects.delete(
                         classid=item.get('classid'),
                         instanceid=item.get('instanceid'),
                         market_hash_name=item.get('market_hash_name')
