@@ -8,7 +8,7 @@ from functools import wraps
 from telegram.ext import CommandHandler
 
 from market.models import Bot, ItemGroup, Item, User
-from market.bot import send_request_to_market, hold_item, delete_item
+from market.bot import send_request_to_market, hold_item, delete_item, _delete_orders
 
 load_dotenv()
 
@@ -86,7 +86,7 @@ def help(update, context):
 
     result += list_item_group.__doc__
     result += create_item_group.__doc__
-    result += set_item_group_state.__doc__
+    result += set_item_group_state_amount.__doc__
 
     result += list_item.__doc__
     result += list_group_items.__doc__
@@ -396,28 +396,32 @@ def create_item_group(update, context):
     Принимает аргументы:
         <bot> - id бота, которому принадлежит данная группа,
         <state> - состояние ('active' по умолчанию),
-        <market_hash_name> - хэш-название предмета с маркета (все пробелы заменить на '_').
+        <market_hash_name> - хэш-название предмета с маркета (все пробелы заменить на '_'),
+        <amount> - количество предметов в обороте.
     """
 
     async def create_item_group_in_db(
             bot: int,
             market_hash_name: str = None,
-            state: str = 'active'
+            state: str = 'active',
+            amount: int = 1
     ) -> ItemGroup:
         _bot = await Bot.objects.get_or_none(id=bot)
         assert _bot
-        _group = await ItemGroup.objects.get_or_create(
+        _group = await ItemGroup.objects.create(
             bot=_bot,
             state=state,
-            market_hash_name=market_hash_name
+            market_hash_name=market_hash_name,
+            amount=amount,
+            to_order_amount=amount
         )
-        assert _group
         return _group
 
     arguments = {
         'bot': '--',
         'state': 'active',
-        'market_hash_name': None
+        'market_hash_name': None,
+        'amount': 1
     }
     arguments = check_args(context, update, arguments)
     if not arguments:
@@ -429,7 +433,7 @@ def create_item_group(update, context):
 
 
 @restriction
-def set_item_group_state(update, context):
+def set_item_group_state_amount(update, context):
     """
 /set_item_group_state
     Установка группе предметов нового статуса.
@@ -440,18 +444,66 @@ def set_item_group_state(update, context):
         hold - не продавать и не покупать предметы.
     Принимает два аргумента:
         <id> - id группы,
-        <state> - новый статус группы.
+        <state> - новый статус группы,
+        <amount> - количество предметов в обороте.
     """
 
-    async def set_item_group_state_in_db(id: int, state: str) -> ItemGroup:
-        _group = await ItemGroup.objects.get_or_none(id=id)
+    async def set_item_group_state_in_db(id: int, state: str, amount: int = None) -> ItemGroup:
+        _group = await ItemGroup.objects.select_related(ItemGroup.bot).get_or_none(id=id)
         assert _group
-        await _group.update(state=state)
+
+        if not state:
+            state = _group.state
+
+        if amount:
+
+            if amount > _group.amount:
+                await _group.update(
+                    state=state,
+                    amount=amount,
+                    to_order_amount=_group.to_order_amount + (amount - _group.amount)
+                )
+
+            elif amount < _group.amount:
+                if amount >= _group.amount - _group.to_order_amount:
+                    await _group.update(
+                        state=state,
+                        amount=amount,
+                        to_order_amount=_group.to_order_amount
+                    )
+                else:
+                    items_to_delete_orders = await Item.objects.filter(
+                        item_group=_group
+                    ).filter(
+                        state='ordered'
+                    ).order_by(
+                        '-buy_for'
+                    ).limit(
+                        _group.amount - _group.to_order_amount - amount
+                    ).all()
+
+                    await _delete_orders(_group.bot, items_to_delete_orders)
+                    for item in items_to_delete_orders:
+                        await item.delete()
+
+                    await _group.update(
+                        state=state,
+                        amount=amount,
+                        to_order_amount=amount
+                    )
+
+            else:
+                await _group.update(state=state)
+
+        else:
+            await _group.update(state=state)
+
         return _group
 
     arguments = {
         'id': '--',
-        'state': '--'
+        'state': None,
+        'amount': None
     }
     arguments = check_args(context, update, arguments)
     if not arguments:
@@ -541,6 +593,7 @@ def add_item_to_group(update, context):
             classid=classid,
             instanceid=instanceid
         )
+        await _group.update(amount=_group.amount + 1, to_order_amount=_group.to_order_amount + 1)
         return _item
 
     arguments = {
@@ -627,7 +680,7 @@ update_bot_market_secret_handler = CommandHandler('update_bot_market_secret', up
 
 list_item_group_handler = CommandHandler('list_item_group', list_item_group)
 create_item_group_handler = CommandHandler('create_item_group', create_item_group)
-set_item_group_state_handler = CommandHandler('set_item_group_state', set_item_group_state)
+set_item_group_state_handler = CommandHandler('set_item_group_state', set_item_group_state_amount)
 
 list_item_handler = CommandHandler('list_item', list_item)
 list_group_items_handler = CommandHandler('list_group_items', list_group_items)
