@@ -120,9 +120,13 @@ async def update_orders_price():
             try:
                 response = await send_request_to_market(
                     item.item_group.bot,
-                    f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/'
+                    f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/',
+                    return_error=True
                 )
-                best_offer = int(response.get('best_offer'))
+                if 'error' in response:
+                    continue
+                else:
+                    best_offer = int(response.get('best_offer'))
 
                 response = await send_request_to_market(
                     item.item_group.bot,
@@ -132,7 +136,10 @@ async def update_orders_price():
                     },
                     error_recursion=True
                 )
-                item.sell_for = response['data'][0]['price'] - 1
+                if response['date']:
+                    item.sell_for = response['data'][0]['price'] - 1
+                else:
+                    continue
 
                 if (
                         best_offer >= item.ordered_for
@@ -154,13 +161,11 @@ async def update_orders_price():
                     )
                     if 'error' in response:
                         log(f'order with item with id {item.id} can not be changed now')
-                        await asyncio.sleep(20)
                         continue
                     await item.update(ordered_for=(best_offer + 1), sell_for=item.sell_for)
 
             except Exception as e:
                 log(e)
-                await asyncio.sleep(10)
                 continue
 
 
@@ -221,7 +226,11 @@ async def take_items():
 
         bots = await Bot.objects.exclude(state='destroyed').all()
         for bot in bots:
-            await accept_donation_offers(bot)
+            try:
+                await accept_donation_offers(bot)
+            except Exception as e:
+                log(e)
+                continue
 
         log('Inventory update')
 

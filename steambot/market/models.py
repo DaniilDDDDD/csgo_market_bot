@@ -51,6 +51,8 @@ class ItemGroup(ormar.Model):
 
     market_hash_name: str = ormar.String(nullable=True, max_length=1000)
 
+    amount: int = ormar.Integer(nullable=True, minimum=0)
+
     def __str__(self):
         return f"Group of items id is {self.id}.\n" \
                f"Group's state is {self.state}.\n" \
