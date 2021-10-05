@@ -303,6 +303,7 @@ def set_bot_status(update, context):
 /set_bot_status
     Установко боту нового статуса.
     Возможные статусы:
+        circle_ended - активация бота;
         paused - остановка работы бота;
         destroyed - удалить бота;
         sell - продавать все дотсупные для прожади предметы и не покупать ничего;
@@ -412,8 +413,8 @@ def create_item_group(update, context):
             bot=_bot,
             state=state,
             market_hash_name=market_hash_name,
-            amount=amount,
-            to_order_amount=amount
+            amount=int(amount),
+            to_order_amount=int(amount)
         )
         return _group
 
@@ -435,7 +436,7 @@ def create_item_group(update, context):
 @restriction
 def set_item_group_state_amount(update, context):
     """
-/set_item_group_state
+/set_item_group_state_amount
     Установка группе предметов нового статуса.
     Возможные статусы:
         active - группа предметов "работате";
@@ -456,6 +457,7 @@ def set_item_group_state_amount(update, context):
             state = _group.state
 
         if amount:
+            amount = int(amount)
 
             if amount > _group.amount:
                 await _group.update(
@@ -472,7 +474,9 @@ def set_item_group_state_amount(update, context):
                         to_order_amount=_group.to_order_amount
                     )
                 else:
-                    items_to_delete_orders = await Item.objects.filter(
+                    items_to_delete_orders = await Item.objects.select_related(
+                        Item.item_group
+                    ).filter(
                         item_group=_group
                     ).filter(
                         state='ordered'
@@ -482,15 +486,13 @@ def set_item_group_state_amount(update, context):
                         _group.amount - _group.to_order_amount - amount
                     ).all()
 
-                    await _delete_orders(_group.bot, items_to_delete_orders)
-                    for item in items_to_delete_orders:
-                        await item.delete()
-
                     await _group.update(
                         state=state,
                         amount=amount,
-                        to_order_amount=amount
+                        to_order_amount=0
                     )
+
+                    await _delete_orders(_group.bot, items_to_delete_orders, delete_items=True)
 
             else:
                 await _group.update(state=state)
@@ -680,7 +682,7 @@ update_bot_market_secret_handler = CommandHandler('update_bot_market_secret', up
 
 list_item_group_handler = CommandHandler('list_item_group', list_item_group)
 create_item_group_handler = CommandHandler('create_item_group', create_item_group)
-set_item_group_state_handler = CommandHandler('set_item_group_state', set_item_group_state_amount)
+set_item_group_state_handler = CommandHandler('set_item_group_state_amount', set_item_group_state_amount)
 
 list_item_handler = CommandHandler('list_item', list_item)
 list_group_items_handler = CommandHandler('list_group_items', list_group_items)

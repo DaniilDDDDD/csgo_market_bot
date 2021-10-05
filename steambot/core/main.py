@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     asyncio.run(database_connect(database))
 
-    # updater.start_polling()
+    updater.start_polling()
 
     # запуск параллельных задач
     asyncio.run(main())

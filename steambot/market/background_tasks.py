@@ -211,6 +211,14 @@ async def take_items():
                         await item.update(state='for_sale')
                         await item.item_group.update(to_order_amount=item.item_group.to_order_amount + 1)
 
+        if offers['response']['trade_offers_received']:
+            log('Inventory update')
+            await send_request_to_market(
+                bot,
+                'https://market.csgo.com/api/v2/update-inventory/',
+                error_recursion=True
+            )
+
     while True:
 
         bots = await Bot.objects.exclude(state='destroyed').all()
@@ -220,15 +228,6 @@ async def take_items():
             except Exception as e:
                 log(e)
                 continue
-
-        log('Inventory update')
-
-        for bot in bots:
-            await send_request_to_market(
-                bot,
-                'https://market.csgo.com/api/v2/update-inventory/',
-                error_recursion=True
-            )
 
         await asyncio.sleep(30)
 
@@ -246,12 +245,12 @@ async def give_items():
             _bot,
             'https://market.csgo.com/api/v2/trade-request-give-p2p-all',
             params={'key': _bot.secret_key},
-            error_recursion=True
+            error_recursion=True,
+            return_error=True
         )
         if 'error' in response:
             response['offers'] = []
 
-        log(response)
         offers = response['offers']
 
         if offers:
@@ -283,6 +282,13 @@ async def give_items():
                         market_hash_name=item.get('market_hash_name')
                     )
 
+        log('Inventory update')
+        await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/update-inventory/',
+            error_recursion=True
+        )
+
     while True:
 
         log('In give_items')
@@ -294,13 +300,5 @@ async def give_items():
 
         for task in tasks:
             await task
-
-        log('Inventory update')
-        for bot in bots:
-            await send_request_to_market(
-                bot,
-                'https://market.csgo.com/api/v2/update-inventory/',
-                error_recursion=True
-            )
 
         await asyncio.sleep(30)
