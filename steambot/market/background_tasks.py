@@ -33,31 +33,19 @@ async def bots_states_check():
                 await bot_work(bot)
 
             elif bot.state == 'sell':
-                # меняем статусы, делаем один оборот и уходим на паузу
-                groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).all()
-                for group in groups:
-                    await group.update(state='sell')
+                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).update(state='sell')
 
                 await bot_work(bot)
-                await bot.update(state='paused')
 
             elif bot.state == 'buy':
-                # меняем статусы, делаем один оборот и уходим на паузу
-                groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).all()
-                for group in groups:
-                    await group.update(state='buy')
+                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).update(state='buy')
 
                 await bot_work(bot)
-                await bot.update(state='paused')
 
             elif bot.state == 'hold':
-                # меняем статусы, делаем один оборот и уходим на паузу
-                groups = await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).all()
-                for group in groups:
-                    await group.update(state='hold')
+                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(state='hold')
 
                 await bot_work(bot)
-                await bot.update(state='paused')
 
             elif bot.state == 'destroy':
                 await bot.update(state='destroyed')
@@ -70,11 +58,14 @@ async def bots_states_check():
 
                 for group in groups:
                     task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
-                        bot, await Item.objects.filter(item_group=group).filter(state='on_sale').all()
+                        bot,
+                        await Item.objects.filter(item_group=group).filter(state='on_sale').all()
                     ))
 
                     task_delete_orders = asyncio.create_task(_delete_orders(
-                        bot, await Item.objects.filter(item_group=group).filter(state='ordered').all()
+                        bot,
+                        await Item.objects.filter(item_group=group).filter(state='ordered').all(),
+                        group
                     ))
 
                     await task_delete_orders
@@ -208,8 +199,14 @@ async def take_items():
                         classid=value['classid'], instanceid=value['instanceid']
                     )
                     if item:
-                        await item.update(state='for_sale')
                         await item.item_group.update(to_order_amount=item.item_group.to_order_amount + 1)
+                        await item.update(state='for_sale')
+                        await send_request_to_market(
+                            bot,
+                            f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/',
+                            return_error=True,
+                            error_recursion=True
+                        )
 
         if offers['response']['trade_offers_received']:
             log('Inventory update')

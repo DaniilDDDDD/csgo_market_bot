@@ -492,7 +492,7 @@ def set_item_group_state_amount(update, context):
                         to_order_amount=0
                     )
 
-                    await _delete_orders(_group.bot, items_to_delete_orders, delete_items=True)
+                    await _delete_orders(_group.bot, items_to_delete_orders, _group, delete_items=True)
 
             else:
                 await _group.update(state=state)

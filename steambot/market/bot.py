@@ -187,18 +187,16 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         await task_sell
 
     if group.state == 'sell':
-
         task_sell = asyncio.create_task(_sell(
             bot, items['for_sale']
         ))
 
         task_delete_orders = asyncio.create_task(_delete_orders(
-            bot, items['ordered']
+            bot, items['ordered'], group, delete_items=True
         ))
 
         await task_delete_orders
         await task_sell
-        await group.update(state='disabled')
 
     if group.state == 'buy':
         task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
@@ -210,22 +208,18 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         await task_delete_sale_offers
         await task_buy_group
 
-        await group.update(state='disabled')
-
     if group.state == 'hold':
-
         task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
             bot, items['on_sale']
         ))
 
         task_delete_orders = asyncio.create_task(_delete_orders(
-            bot, items['ordered']
+            bot, items['ordered'], group, delete_items=True
         ))
 
         await task_delete_orders
         await task_delete_sale_offers
 
-        await Item.objects.filter(item_group=group).filter(state__in=['on_sale', 'ordered']).update(state='hold')
         await group.update(state='disabled')
 
     if group.state == 'delete':
@@ -234,7 +228,7 @@ async def bot_round_group(bot: Bot, group: ItemGroup):
         ))
 
         task_delete_orders = asyncio.create_task(_delete_orders(
-            bot, items['ordered']
+            bot, items['ordered'], group
         ))
 
         await task_delete_orders
@@ -349,7 +343,11 @@ async def _group_buy(bot: Bot, group: ItemGroup):
         if not response['data']:
             return
         average_price = (int(response['data'][group.market_hash_name]['average']) + 1) * 100
+
         # используем ограниченное количество предметов, так как их очень много
+        # если доступных предметов меньше чем заказанных, то заказываются все доступные предметы
+        if group.amount > len(items['data']):
+            group.amount = len(items['data'])
 
         for i in items['data'][:group.amount]:
             # нужно дозаказать определённое число предметов
@@ -417,7 +415,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
         await group.update(to_order_amount=group.to_order_amount)
 
 
-async def _delete_orders(bot: Bot, ordered_items: List[Item], delete_items: bool = False):
+async def _delete_orders(bot: Bot, ordered_items: List[Item], group: ItemGroup, delete_items: bool = False):
     for item in ordered_items:
         log(f'in delete orders for item with id {item.id}')
         response = await send_request_to_market(
@@ -432,18 +430,16 @@ async def _delete_orders(bot: Bot, ordered_items: List[Item], delete_items: bool
                 continue
             elif response['error'] == 'internal':
                 await asyncio.sleep(20)
-                await _delete_orders(bot, [item])
+                await _delete_orders(bot, [item], group)
 
         if not delete_items:
             await item.update(state='for_buy')
         else:
             await item.delete()
 
-    if not delete_items:
-        await ordered_items[0].item_group.update(
-            to_order_amount=ordered_items[0].item_group.to_order_amount + len(ordered_items)
-        )
-
+    await group.update(
+        to_order_amount=group.to_order_amount + len(ordered_items)
+    )
 
 
 async def _delete_sale_offers(bot, on_sale_items: List[Item]):
@@ -461,7 +457,6 @@ async def _delete_sale_offers(bot, on_sale_items: List[Item]):
         )
         if 'error' in response:
             log(f'item {item.id} is not on sale!')
-            await item.update(state='hold')
             continue
 
         await item.update(state='for_sale')
@@ -471,7 +466,7 @@ async def _delete_sale_offers(bot, on_sale_items: List[Item]):
 async def hold_item(item: Item):
     if item.state == 'ordered':
         await _delete_orders(
-            item.item_group.bot, [item]
+            item.item_group.bot, [item], item.item_group
         )
         await item.item_group.update(to_order_amount=item.item_group.to_order_amount + 1)
     elif item.state == 'on_sale':
@@ -484,7 +479,7 @@ async def hold_item(item: Item):
 async def delete_item(item: Item):
     if item.state == 'ordered':
         await _delete_orders(
-            item.item_group.bot, [item]
+            item.item_group.bot, [item], item.item_group
         )
         await item.item_group.update(to_order_amount=item.item_group.to_order_amount + 1)
     elif item.state == 'on_sale':
