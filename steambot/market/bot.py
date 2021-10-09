@@ -371,13 +371,16 @@ async def _group_buy(bot: Bot, group: ItemGroup):
             )
             if 'error' in response:
                 log(response['error'])
-                # если нет других ордеров на покупку этого предмета, то выставляем по цене, равной 30% от средней цены
-                _buy_for = int(average_price * 0.3)
+                # если нет других ордеров на покупку этого предмета, то выставляем по цене, равной 40% от средней цены
+                _buy_for = int(average_price * 0.4)
 
             else:
                 best_offer = int(response.get('best_offer'))
-                if best_offer < int(i.get('price') * 0.8):
+                if int(i.get('price') * 0.8) > best_offer > int(i.get('price') * 0.4):
                     _buy_for = best_offer + 1
+                # если все остальные ордеры слишком жадные, то создаём такой, чтобы цена была более привлекательной
+                elif int(i.get('price') * 0.8) > best_offer and best_offer < int(i.get('price') * 0.4):
+                    _buy_for = int(i.get('price') * 0.5)
                 else:
                     _buy_for = int(i.get('price') * 0.8)
 
