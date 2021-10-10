@@ -113,7 +113,7 @@ async def update_orders_price():
                     },
                     error_recursion=True
                 )
-                if response['date']:
+                if response['data']:
                     item.sell_for = response['data'][0]['price'] - 1
                 else:
                     continue
