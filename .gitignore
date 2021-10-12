@@ -5,3 +5,5 @@
 
 /steambot/tests/cheking.py
 /steambot/telegram_bot/sqlite.db
+
+*.log

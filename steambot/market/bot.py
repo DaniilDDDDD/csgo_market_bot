@@ -1,4 +1,5 @@
 import os
+import logging
 import asyncio
 import requests
 from typing import List
@@ -6,20 +7,18 @@ from dotenv import load_dotenv
 from datetime import datetime as dt, timedelta as delta
 
 from .models import Bot, Item, ItemGroup
+from logs.logger import log
 
 load_dotenv()
+
+logger_name = str(__file__)[str(__file__)[: str(__file__).rfind('\\')].rfind('\\'):]
+module_logger = logging.getLogger(logger_name)
 
 state_check_delta = delta(minutes=int(os.environ.get('STATE_CHECK_TIMEDELTA')))
 trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
 
 sessions = {}
-
-
-# TODO: заменить на логирование
-def log(out: str):
-    print(str(out))
-
 
 # TODO: попробовать переписать асинхронно
 async def send_request_to_market(
@@ -53,8 +52,7 @@ async def send_request_to_market(
                     params={'key': _bot.secret_key}
                 ).json()
                 pinged = _response.get('success', False)
-                log('in ping')
-                log(_response)
+                log(f'Ping:\n{_response}')
                 if not pinged:
                     await asyncio.sleep(10)
             await bot.update(last_ping_pong=dt.now())
@@ -75,8 +73,7 @@ async def send_request_to_market(
             response = session.get(url=url, params=params).json()
             if 'error' in response and return_error:
                 return response
-            log('in response')
-            log(response)
+            log(f'Response:\n{response}')
             success = response.get('success', False)
             if not success:
                 await asyncio.sleep(10)
@@ -84,7 +81,7 @@ async def send_request_to_market(
 
     except Exception as e:
         if error_recursion:
-            log(e)
+            log(e, 'ERROR')
             await asyncio.sleep(10)
             await send_request_to_market(bot, url, params, return_error, error_recursion)
         else:
@@ -120,7 +117,7 @@ async def bot_update_database_with_inventory(bot: Bot, use_current_items: str = 
             'https://market.csgo.com/api/v2/my-inventory/'
         )
     except Exception as e:
-        log(e)
+        log(e, 'ERROR')
         return
 
     for item in response.get('items', []):
@@ -248,9 +245,9 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
 
     if items_for_sale:
 
-        log('in sell')
+        log('In sell:\n')
+        log(f'{bot.id} bot\'s inventory:')
 
-        log('my inventory')
         try:
             inventory = await send_request_to_market(
                 bot,
@@ -258,7 +255,7 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
             )
             inventory = inventory.get('items', [])
         except Exception as e:
-            log(e)
+            log(e, 'ERROR')
             return
 
         items_with_id = []
@@ -271,12 +268,11 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
                     item.market_id = _item['id']
                     items_with_id.append(item)
 
-        log('items with ids:')
-        log(items_with_id)
+        log(f'Items with ids:\n{items_with_id}')
 
         for item in items_with_id:
 
-            log('item sell with update price')
+            log('Sell item with updated price:')
 
             # цена формируется на основании цены других предметов
             # (цена саого дешёвого предмета уменьшается на 1)
@@ -318,6 +314,8 @@ async def _sell(bot: Bot, items_for_sale: List[Item]):
 async def _group_buy(bot: Bot, group: ItemGroup):
     if group.to_order_amount > 0:
 
+        log(f'In buy group with market_hash_name {group.market_hash_name}:\n')
+
         items = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/search-item-by-hash-name',
@@ -328,7 +326,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
             return_error=True
         )
         if 'error' in items:
-            log(items['error'])
+            log(items["error"], 'ERROR')
             return
 
         response = await send_request_to_market(
@@ -370,7 +368,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
                 return_error=True
             )
             if 'error' in response:
-                log(response['error'])
+                log(response['error'], 'ERROR')
                 # если нет других ордеров на покупку этого предмета, то выставляем по цене, равной 40% от средней цены
                 _buy_for = int(average_price * 0.4)
 
@@ -393,7 +391,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
                     )
 
                     if 'error' in response:
-                        log(response['error'])
+                        log(response['error'], 'ERROR')
                         continue
 
                     else:
@@ -412,7 +410,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
                             await item.update(state='ordered', buy_for=_buy_for, ordered_for=_buy_for)
 
                 except Exception as e:
-                    log(e)
+                    log(e, 'ERROR')
                     continue
 
         await group.update(to_order_amount=group.to_order_amount)
@@ -420,7 +418,7 @@ async def _group_buy(bot: Bot, group: ItemGroup):
 
 async def _delete_orders(bot: Bot, ordered_items: List[Item], group: ItemGroup, delete_items: bool = False):
     for item in ordered_items:
-        log(f'in delete orders for item with id {item.id}')
+        log(f'In deleting order for item with id {item.id}:')
         response = await send_request_to_market(
             bot,
             f'https://market.csgo.com/api/ProcessOrder/{item.classid}/{item.instanceid}/0/',
@@ -428,7 +426,7 @@ async def _delete_orders(bot: Bot, ordered_items: List[Item], group: ItemGroup, 
             error_recursion=True
         )
         if 'error' in response:
-            log(response['error'])
+            log(response['error'], 'ERROR')
             if response['error'] == 'same_price':
                 continue
             elif response['error'] == 'internal':
@@ -459,7 +457,7 @@ async def _delete_sale_offers(bot, on_sale_items: List[Item]):
             error_recursion=True
         )
         if 'error' in response:
-            log(f'item {item.id} is not on sale!')
+            log(f'Item {item.id} is not on sale!')
             continue
 
         await item.update(state='for_sale')

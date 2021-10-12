@@ -1,3 +1,4 @@
+import logging
 import asyncio
 from steampy.utils import GameOptions
 
@@ -5,7 +6,11 @@ from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import bot_work, send_request_to_market, bot_balance, log, _delete_sale_offers, _delete_orders
+from .bot import bot_work, send_request_to_market, bot_balance, _delete_sale_offers, _delete_orders
+from logs.logger import log
+
+logger_name = str(__file__)[str(__file__)[: str(__file__).rfind('\\')].rfind('\\'):]
+module_logger = logging.getLogger(logger_name)
 
 game = GameOptions.CS
 steam_clients = {}
@@ -25,10 +30,10 @@ async def bots_states_check():
 
         bots = await Bot.objects.exclude(state__in=['in_circle', 'paused']).all()
 
-        log('In bots_states_check')
+        log('In bots_states_check:')
 
         for bot in bots:
-            log(f'Bot {bot.id}')
+            log(f'Bot {bot.id}:')
             if bot.state == 'circle_ended':
                 await bot_work(bot)
 
@@ -87,7 +92,7 @@ async def update_orders_price():
     """
     while True:
 
-        log('In update_orders_price')
+        log('In update_orders_price:')
 
         items = await Item.objects.select_related(Item.item_group.bot).filter(state='ordered').all()
         await asyncio.sleep(10)
@@ -129,7 +134,7 @@ async def update_orders_price():
                         item.ordered_for - best_offer > int(item.sell_for * 0.03)
                         and item.sell_for > 50000
                 ):
-                    log('in update order')
+                    log('In update order:')
                     response = await send_request_to_market(
                         item.item_group.bot,
                         f'https://market.csgo.com/api/UpdateOrder/'
@@ -137,12 +142,12 @@ async def update_orders_price():
                         return_error=True
                     )
                     if 'error' in response:
-                        log(f'order with item with id {item.id} can not be changed now')
+                        log(f'Order with item with id {item.id} can not be changed now!', 'ERROR')
                         continue
                     await item.update(ordered_for=(best_offer + 1), sell_for=item.sell_for)
 
             except Exception as e:
-                log(e)
+                log(e, 'ERROR')
                 continue
 
 
@@ -163,7 +168,7 @@ async def get_bot_steam_client(bot: Bot) -> SteamClient:
             steam_clients[bot.id] = steam_client
             return steam_client
         except Exception as e:
-            log(e)
+            log(e, 'ERROR')
             await asyncio.sleep(10)
             await get_bot_steam_client(bot)
 
@@ -181,14 +186,14 @@ async def take_items():
 
     async def accept_donation_offers(_bot: Bot):
 
-        log(f'In take_items for bot with id {_bot.id}')
+        log(f'In take_items for bot with id {_bot.id}:')
 
         steam_client = await get_bot_steam_client(_bot)
 
         offers = steam_client.get_trade_offers()
 
         for offer in offers['response']['trade_offers_received']:
-            log(offer)
+            log(f'Incoming trade offers:\n{offer}')
             # если донат, то принимаем (так как при покупке от нас не требуется никаких предметов)
             if is_donation(offer):
                 steam_client.accept_trade_offer(offer['tradeofferid'])
@@ -209,7 +214,7 @@ async def take_items():
                         )
 
         if offers['response']['trade_offers_received']:
-            log('Inventory update')
+            log('Inventory update:')
             await send_request_to_market(
                 bot,
                 'https://market.csgo.com/api/v2/update-inventory/',
@@ -223,7 +228,7 @@ async def take_items():
             try:
                 await accept_donation_offers(bot)
             except Exception as e:
-                log(e)
+                log(e, 'ERROR')
                 continue
 
         await asyncio.sleep(30)
@@ -269,7 +274,7 @@ async def give_items():
                                         f"?partner={offer['partner']}&token={offer['token']}"
                     )
                 except Exception as _e:
-                    log(_e)
+                    log(_e, 'ERROR')
 
             for item in response.get('items', []):
                 if item.get('status') == '2':
@@ -279,7 +284,7 @@ async def give_items():
                         market_hash_name=item.get('market_hash_name')
                     )
 
-        log('Inventory update')
+        log('Inventory update:')
         await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/update-inventory/',
@@ -288,7 +293,7 @@ async def give_items():
 
     while True:
 
-        log('In give_items')
+        log('In give_items:')
 
         bots = await Bot.objects.exclude(state='destroyed').all()
         tasks = []

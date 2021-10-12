@@ -1,5 +1,4 @@
 import os
-import logging
 from dotenv import load_dotenv
 from telegram.ext import Updater
 
@@ -12,11 +11,6 @@ from telegram_bot.command_handlers import (
 )
 
 load_dotenv()
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
 
 bot_name = os.environ.get('BOT_NAME')
 

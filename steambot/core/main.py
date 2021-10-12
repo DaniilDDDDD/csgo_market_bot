@@ -33,6 +33,7 @@ async def database_disconnect(db: Database):
 
 if __name__ == '__main__':
     """Инициализация базы данных"""
+
     metadata.create_all(engine)
 
     asyncio.run(database_connect(database))
