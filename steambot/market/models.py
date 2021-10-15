@@ -49,7 +49,7 @@ class ItemGroup(ormar.Model):
 
     bot: Bot = ormar.ForeignKey(Bot, nullable=False)
 
-    market_hash_name: str = ormar.String(nullable=True, max_length=1000)
+    market_hash_name: str = ormar.String(nullable=True, max_length=1000, unique=True)
 
     # количество предметов, участвующих в обороте
     amount: int = ormar.Integer(default=1, minimum=1)
