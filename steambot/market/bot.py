@@ -318,6 +318,9 @@ async def _delete_orders(bot: Bot, group: ItemGroup):
                             await asyncio.sleep(20)
                             await _delete_orders(bot, group)
 
+                    else:
+                        group.to_order_amount += 1
+
         await group.update(
             to_order_amount=group.to_order_amount)
 
@@ -332,7 +335,7 @@ async def _delete_sale_offers(bot: Bot, group: ItemGroup):
         return_error=True,
         error_recursion=True
     )
-    if 'error' in items:
+    if not items['items'] or 'error' in items:
         log(f'No items in active of this group!')
         return
 

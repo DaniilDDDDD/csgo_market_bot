@@ -66,7 +66,7 @@ async def bots_states_check():
                 for group in groups:
                     task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
                         bot,
-                        await Item.objects.filter(item_group=group).filter(state='on_sale').all()
+                        group
                     ))
 
                     task_delete_orders = asyncio.create_task(_delete_orders(
@@ -77,7 +77,6 @@ async def bots_states_check():
                     await task_delete_orders
                     await task_delete_sale_offers
 
-                    await Item.objects.exclude(state='hold').delete(item_group=group)
                     await group.delete()
 
                 await bot.delete()
@@ -126,26 +125,30 @@ async def buy():
         await asyncio.sleep(30)
 
 
-# TODO: переписать через получение списка ордеров от маркета
 async def update_orders_price():
     """
     Обновление цен на автоматическую покупку предмета:
     если появляется ордер от другого пользователя, который автоматически покупает предмет, но за большую сумму,
     то обновляему ордер, чтобы наш был дороже, дабы ордер был удовлетворён ранее
     """
-    while True:
 
-        log('In update_orders_price:')
+    async def update_bots_orders(bot):
+        log(f'In update_orders_price for bot {bot.id}')
 
-        items = await Item.objects.select_related(Item.item_group.bot).filter(state='ordered').all()
-        await asyncio.sleep(10)
+        orders = await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/GetOrders//',
+            error_recursion=True
+        )
+        if 'error' in orders or orders['Orders'] == 'No orders':
+            return
 
-        for item in items:
+        for item in orders['Orders']:
 
             try:
                 response = await send_request_to_market(
-                    item.item_group.bot,
-                    f'https://market.csgo.com/api/BestBuyOffer/{item.classid}_{item.instanceid}/',
+                    bot,
+                    f'https://market.csgo.com/api/BestBuyOffer/{item["i_classid"]}_{item["i_instanceid"]}/',
                     return_error=True
                 )
                 if 'error' in response:
@@ -154,44 +157,53 @@ async def update_orders_price():
                     best_offer = int(response.get('best_offer'))
 
                 response = await send_request_to_market(
-                    item.item_group.bot,
+                    bot,
                     'https://market.csgo.com/api/v2/search-item-by-hash-name',
                     {
-                        'hash_name': item.market_hash_name
+                        'hash_name': item['i_market_hash_name']
                     },
                     error_recursion=True
                 )
                 if response['data']:
-                    item.sell_for = response['data'][0]['price'] - 1
+                    sell_for = response['data'][0]['price'] - 1
                 else:
                     continue
 
                 if (
-                        best_offer >= item.ordered_for
-                        and (best_offer + 1) < int(item.sell_for * 0.9)
-                        and (best_offer + 1) < await bot_balance(item.item_group.bot) * 100
+                        best_offer >= item['o_price']
+                        and (best_offer + 1) < int(sell_for * 0.9)
+                        and (best_offer + 1) < await bot_balance(bot) * 100
                 ) or (
                         # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
                         # исходящего не от нас и отличающегося от нашего холтя бы на 3%,
                         # сменяем цену на цену этого ордера + 1
-                        item.ordered_for - best_offer > int(item.sell_for * 0.03)
-                        and item.sell_for > 50000
+                        item['o_price'] - best_offer > int(sell_for * 0.03)
+                        and sell_for > 50000
                 ):
                     log('In update order:')
                     response = await send_request_to_market(
-                        item.item_group.bot,
+                        bot,
                         f'https://market.csgo.com/api/UpdateOrder/'
-                        f'{item.classid}/{item.instanceid}/{best_offer + 1}/',
+                        f'{item["i_classid"]}/{item["i_instanceid"]}/{best_offer + 1}/',
                         return_error=True
                     )
                     if 'error' in response:
-                        log(f'Order with item with id {item.id} can not be changed now!', 'ERROR')
+                        log(
+                            f'Order for item with classid {item["i_classid"]} and inctanceid {item["i_instanceid"]}'
+                            f' can not be changed now!',
+                            'ERROR'
+                        )
                         continue
-                    await item.update(ordered_for=(best_offer + 1), sell_for=item.sell_for)
 
             except Exception as e:
                 log(e, 'ERROR')
                 continue
+
+    bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
+
+    tasks = [asyncio.create_task(update_bots_orders(_bot)) for _bot in bots]
+    for task in tasks:
+        await task
 
 
 async def get_bot_steam_client(bot: Bot) -> SteamClient:
@@ -218,7 +230,7 @@ async def get_bot_steam_client(bot: Bot) -> SteamClient:
 
 async def take_items():
     """
-    Принимаем трейды с купленными нами вещами
+    Принимаем трейды с купленными нами вещами.
     """
 
     def is_donation(_offer: dict) -> bool:
@@ -242,7 +254,6 @@ async def take_items():
                 print(offer['items_to_receive'])
                 steam_client.accept_trade_offer(offer['tradeofferid'])
                 for key, value in offer['items_to_receive'].items():
-
                     group = await ItemGroup.objects.get(market_hash_name=value['market_hash_name'])
                     await group.update(to_order_amount=group.to_order_amount + 1)
 
