@@ -13,16 +13,16 @@ async def main():
     task_bots_states_check = asyncio.create_task(bots_states_check())
     task_sell = asyncio.create_task(sell())
     task_buy = asyncio.create_task(buy())
-    # task_take_items = asyncio.create_task(take_items())
-    # task_give_items = asyncio.create_task(give_items())
-    # task_update_orders_price = asyncio.create_task(update_orders_price())
+    task_take_items = asyncio.create_task(take_items())
+    task_give_items = asyncio.create_task(give_items())
+    task_update_orders_price = asyncio.create_task(update_orders_price())
 
     await task_bots_states_check
     await task_buy
     await task_sell
-    # await task_take_items
-    # await task_give_items
-    # await task_update_orders_price
+    await task_take_items
+    await task_give_items
+    await task_update_orders_price
 
 
 async def database_connect(db: Database):

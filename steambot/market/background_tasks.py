@@ -138,7 +138,8 @@ async def update_orders_price():
         orders = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/GetOrders//',
-            error_recursion=True
+            error_recursion=True,
+            return_error=True
         )
         if 'error' in orders or orders['Orders'] == 'No orders':
             return
@@ -170,14 +171,14 @@ async def update_orders_price():
                     continue
 
                 if (
-                        best_offer >= item['o_price']
+                        best_offer >= int(item['o_price'])
                         and (best_offer + 1) < int(sell_for * 0.9)
                         and (best_offer + 1) < await bot_balance(bot) * 100
                 ) or (
                         # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
                         # исходящего не от нас и отличающегося от нашего холтя бы на 3%,
                         # сменяем цену на цену этого ордера + 1
-                        item['o_price'] - best_offer > int(sell_for * 0.03)
+                        int(item['o_price']) - best_offer > int(sell_for * 0.03)
                         and sell_for > 50000
                 ):
                     log('In update order:')
@@ -199,11 +200,13 @@ async def update_orders_price():
                 log(e, 'ERROR')
                 continue
 
-    bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
+    while True:
+        bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
 
-    tasks = [asyncio.create_task(update_bots_orders(_bot)) for _bot in bots]
-    for task in tasks:
-        await task
+        tasks = [asyncio.create_task(update_bots_orders(_bot)) for _bot in bots]
+        for task in tasks:
+            await task
+        await asyncio.sleep(5)
 
 
 async def get_bot_steam_client(bot: Bot) -> SteamClient:
