@@ -2,11 +2,10 @@ import os
 import logging
 import asyncio
 import requests
-from typing import List
 from dotenv import load_dotenv
 from datetime import datetime as dt, timedelta as delta
 
-from .models import Bot, Item, ItemGroup
+from .models import Bot, ItemGroup
 from logs.logger import log
 
 load_dotenv()
@@ -14,9 +13,10 @@ load_dotenv()
 logger_name = str(__file__)[str(__file__)[: str(__file__).rfind('\\')].rfind('\\'):]
 module_logger = logging.getLogger(logger_name)
 
-state_check_delta = delta(minutes=int(os.environ.get('STATE_CHECK_TIMEDELTA')))
+update_inventory_delta = delta(minutes=int(os.environ.get('UPDATE_INVENTORY_DELTA')))
 trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
+
 
 sessions = {}
 
@@ -99,6 +99,21 @@ async def bot_balance(bot: Bot):
         await asyncio.sleep(10)
         await bot_balance(bot)
     return response.get('money', 0)
+
+
+async def bot_update_inventory(bot: Bot):
+    if (dt.now() - bot.state_check_timestamp) >= update_inventory_delta:
+        response = await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/update-inventory/',
+            error_recursion=True,
+            return_error=True
+        )
+        if 'error' in response:
+            await bot.update(state_check_timestamp=dt.now())
+
+    else:
+        return
 
 
 async def bot_work(bot: Bot):

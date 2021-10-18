@@ -52,7 +52,7 @@ class ItemGroup(ormar.Model):
     market_hash_name: str = ormar.String(nullable=True, max_length=1000, unique=True)
 
     # количество предметов, участвующих в обороте
-    amount: int = ormar.Integer(default=1, minimum=1)
+    amount: int = ormar.Integer(default=1, minimum=0)
     # количество предметов, оставшихся для создания ордера
     to_order_amount: int = ormar.Integer(default=amount, minimum=0)
 

@@ -27,64 +27,68 @@ async def bots_states_check():
     Если у бота статус 'sell', то у всех его групп предметов ставится статус 'sell';
     Если у бота статус 'buy', то у всех его групп предметов ставится статус 'buy'.
     """
-    while True:
+    try:
+        while True:
 
-        bots = await Bot.objects.exclude(state='paused').all()
+            bots = await Bot.objects.exclude(state='paused').all()
 
-        log('In bots_states_check:')
+            log('In bots_states_check:')
 
-        tasks = []
-        for bot in bots:
-            log(f'Bot {bot.id}:')
-            if bot.state == 'active':
-                tasks.append(asyncio.create_task(bot_work(bot)))
+            tasks = []
+            for bot in bots:
+                log(f'Bot {bot.id}:')
+                if bot.state == 'active':
+                    tasks.append(asyncio.create_task(bot_work(bot)))
 
-            elif bot.state == 'sell':
-                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).update(state='sell')
+                elif bot.state == 'sell':
+                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).update(state='sell')
 
-                tasks.append(asyncio.create_task(bot_work(bot)))
+                    tasks.append(asyncio.create_task(bot_work(bot)))
 
-            elif bot.state == 'buy':
-                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).update(state='buy')
+                elif bot.state == 'buy':
+                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).update(state='buy')
 
-                tasks.append(asyncio.create_task(bot_work(bot)))
+                    tasks.append(asyncio.create_task(bot_work(bot)))
 
-            elif bot.state == 'hold':
-                await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(state='hold')
+                elif bot.state == 'hold':
+                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(state='hold')
 
-                tasks.append(asyncio.create_task(bot_work(bot)))
+                    tasks.append(asyncio.create_task(bot_work(bot)))
 
-            elif bot.state == 'destroy':
-                await bot.update(state='destroyed')
+                elif bot.state == 'destroy':
+                    await bot.update(state='destroyed')
 
-            elif bot.state == 'destroyed':
-                steam_client = await get_bot_steam_client(bot)
-                steam_client.logout()
-                steam_clients.pop(bot.id)
-                groups = await ItemGroup.objects.filter(bot=bot).all()
+                elif bot.state == 'destroyed':
+                    steam_client = await get_bot_steam_client(bot)
+                    steam_client.logout()
+                    steam_clients.pop(bot.id)
+                    groups = await ItemGroup.objects.filter(bot=bot).all()
 
-                for group in groups:
-                    task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
-                        bot,
-                        group
-                    ))
+                    for group in groups:
+                        task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
+                            bot,
+                            group
+                        ))
 
-                    task_delete_orders = asyncio.create_task(_delete_orders(
-                        bot,
-                        group
-                    ))
+                        task_delete_orders = asyncio.create_task(_delete_orders(
+                            bot,
+                            group
+                        ))
 
-                    await task_delete_orders
-                    await task_delete_sale_offers
+                        await task_delete_orders
+                        await task_delete_sale_offers
 
-                    await group.delete()
+                        await group.delete()
 
-                await bot.delete()
+                    await bot.delete()
 
-        for task in tasks:
-            await task
+            for task in tasks:
+                await task
 
-        await asyncio.sleep(10)
+            await asyncio.sleep(10)
+
+    except Exception as e:
+        await bots_states_check()
 
 
 async def sell():
@@ -94,15 +98,21 @@ async def sell():
 
     log('In sell tradable items:')
 
-    while True:
+    try:
 
-        bots = await Bot.objects.filter(state__in=['active', 'sell']).all()
+        while True:
 
-        tasks = [asyncio.create_task(_group_sell(_bot)) for _bot in bots]
-        for task in tasks:
-            await task
+            bots = await Bot.objects.filter(state__in=['active', 'sell']).all()
 
-        await asyncio.sleep(10)
+            tasks = [asyncio.create_task(_group_sell(_bot)) for _bot in bots]
+            for task in tasks:
+                await task
+
+            await asyncio.sleep(10)
+
+    except Exception as e:
+        log(e)
+        await sell()
 
 
 async def buy():
@@ -114,15 +124,22 @@ async def buy():
         for _task in _tasks:
             await _task
 
-    while True:
+    try:
 
-        bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
+        while True:
 
-        tasks = [asyncio.create_task(bot_buy(_bot)) for _bot in bots]
-        for task in tasks:
-            await task
+            bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
 
-        await asyncio.sleep(30)
+            tasks = [asyncio.create_task(bot_buy(_bot)) for _bot in bots]
+            for task in tasks:
+                await task
+
+            await asyncio.sleep(30)
+
+    except Exception as e:
+        log(e)
+        await buy()
+
 
 
 async def update_orders_price():
@@ -200,13 +217,19 @@ async def update_orders_price():
                 log(e, 'ERROR')
                 continue
 
-    while True:
-        bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
+    try:
 
-        tasks = [asyncio.create_task(update_bots_orders(_bot)) for _bot in bots]
-        for task in tasks:
-            await task
-        await asyncio.sleep(5)
+        while True:
+            bots = await Bot.objects.filter(state__in=['active', 'buy']).all()
+
+            tasks = [asyncio.create_task(update_bots_orders(_bot)) for _bot in bots]
+            for task in tasks:
+                await task
+            await asyncio.sleep(5)
+
+    except Exception as e:
+        log(e)
+        await update_orders_price()
 
 
 async def get_bot_steam_client(bot: Bot) -> SteamClient:
@@ -268,17 +291,23 @@ async def take_items():
                 error_recursion=True
             )
 
-    while True:
+    try:
 
-        bots = await Bot.objects.exclude(state='destroyed').all()
-        for bot in bots:
-            try:
-                await accept_donation_offers(bot)
-            except Exception as e:
-                log(e, 'ERROR')
-                continue
+        while True:
 
-        await asyncio.sleep(30)
+            bots = await Bot.objects.exclude(state='destroyed').all()
+            for bot in bots:
+                try:
+                    await accept_donation_offers(bot)
+                except Exception as e:
+                    log(e, 'ERROR')
+                    continue
+
+            await asyncio.sleep(30)
+
+    except Exception:
+        log(e)
+        await take_items()
 
 
 async def give_items():
@@ -323,16 +352,22 @@ async def give_items():
             error_recursion=True
         )
 
-    while True:
+    try:
 
-        log('In give_items:')
+        while True:
 
-        bots = await Bot.objects.exclude(state='destroyed').all()
-        tasks = []
-        for bot in bots:
-            tasks.append(asyncio.create_task(send_trades(bot)))
+            log('In give_items:')
 
-        for task in tasks:
-            await task
+            bots = await Bot.objects.exclude(state='destroyed').all()
+            tasks = []
+            for bot in bots:
+                tasks.append(asyncio.create_task(send_trades(bot)))
 
-        await asyncio.sleep(30)
+            for task in tasks:
+                await task
+
+            await asyncio.sleep(30)
+
+    except Exception as e:
+        log(e)
+        await give_items()
