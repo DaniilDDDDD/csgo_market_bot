@@ -102,7 +102,7 @@ async def bot_balance(bot: Bot):
 
 
 async def bot_update_inventory(bot: Bot):
-    if (dt.now() - bot.state_check_timestamp) >= update_inventory_delta:
+    if (dt.now() - bot.update_inventory_timestamp) >= update_inventory_delta:
         response = await send_request_to_market(
             bot,
             'https://market.csgo.com/api/v2/update-inventory/',
@@ -110,7 +110,7 @@ async def bot_update_inventory(bot: Bot):
             return_error=True
         )
         if 'error' in response:
-            await bot.update(state_check_timestamp=dt.now())
+            await bot.update(update_inventory_timestamp=dt.now())
 
     else:
         return
@@ -292,11 +292,7 @@ async def _group_sell(bot: Bot):
                 return_error=True
             )
             if 'error' in response:
-                await send_request_to_market(
-                    bot,
-                    'https://market.csgo.com/api/v2/update-inventory/',
-                    error_recursion=True
-                )
+                await bot_update_inventory(bot)
 
 
 async def _delete_orders(bot: Bot, group: ItemGroup):

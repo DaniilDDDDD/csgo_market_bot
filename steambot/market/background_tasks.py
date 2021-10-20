@@ -6,7 +6,7 @@ from steampy.client import SteamClient, Asset, TradeOfferState
 
 from .models import Bot, Item, ItemGroup
 
-from .bot import (bot_work, send_request_to_market, bot_balance,
+from .bot import (bot_work, send_request_to_market, bot_balance, bot_update_inventory,
                   _delete_sale_offers, _delete_orders, _group_buy, _group_sell)
 from logs.logger import log
 
@@ -51,7 +51,8 @@ async def bots_states_check():
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
                 elif bot.state == 'hold':
-                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(state='hold')
+                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(
+                        state='hold')
 
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
@@ -139,7 +140,6 @@ async def buy():
     except Exception as e:
         log(e)
         await buy()
-
 
 
 async def update_orders_price():
@@ -232,6 +232,67 @@ async def update_orders_price():
         await update_orders_price()
 
 
+async def update_sell_price():
+    """
+    Обновляет цены на продажу выставленных предметов.
+    """
+
+    log('In update_sell_price:')
+
+    async def update_selling_items(bot: Bot):
+
+        items_on_sale = await send_request_to_market(
+            bot,
+            'https://market.csgo.com/api/v2/items',
+            error_recursion=True,
+            return_error=True
+        )
+        if not items_on_sale['items'] or 'error' in items_on_sale:
+            log(f'No items in active of this group!')
+            return
+
+        for item in items_on_sale['items']:
+            if item['status'] == '1':
+
+                items = await send_request_to_market(
+                    bot,
+                    'https://market.csgo.com/api/v2/search-item-by-hash-name',
+                    {
+                        'hash_name': item['market_hash_name']
+                    }
+                )
+
+                for _item in items['data']:
+                    if _item['price'] < item['price']:
+                        response = await send_request_to_market(
+                            bot,
+                            'https://market.csgo.com/api/v2/set-price',
+                            {
+                                'item_id': item['item_id'],
+                                'price': _item['price'] - 1
+                            },
+                            error_recursion=True,
+                            return_error=True
+                        )
+                        if 'error' in response:
+                            log(response['error'])
+                            break
+
+    try:
+
+        while True:
+            bots = await Bot.objects.filter(state__in=['active', 'sell']).all()
+
+            tasks = [asyncio.create_task(update_selling_items(_bot)) for _bot in bots]
+            for task in tasks:
+                await task
+            await asyncio.sleep(3600)
+
+    except Exception as e:
+        log(e)
+        await update_sell_price()
+
+
 async def get_bot_steam_client(bot: Bot) -> SteamClient:
     """
     Получение steam-клиента, работающего с данными бота.
@@ -285,11 +346,7 @@ async def take_items():
 
         if offers['response']['trade_offers_received']:
             log('Inventory update:')
-            await send_request_to_market(
-                bot,
-                'https://market.csgo.com/api/v2/update-inventory/',
-                error_recursion=True
-            )
+            await bot_update_inventory(bot)
 
     try:
 
@@ -305,7 +362,7 @@ async def take_items():
 
             await asyncio.sleep(30)
 
-    except Exception:
+    except Exception as e:
         log(e)
         await take_items()
 
@@ -346,11 +403,7 @@ async def give_items():
                     log(_e, 'ERROR')
 
         log('Inventory update:')
-        await send_request_to_market(
-            bot,
-            'https://market.csgo.com/api/v2/update-inventory/',
-            error_recursion=True
-        )
+        await bot_update_inventory(bot)
 
     try:
 

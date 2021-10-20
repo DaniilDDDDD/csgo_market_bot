@@ -3,7 +3,10 @@ from databases import Database
 
 from core.database import database, metadata, engine
 
-from market.background_tasks import give_items, take_items, bots_states_check, update_orders_price, sell, buy
+from market.background_tasks import (
+    give_items, take_items, bots_states_check,
+    update_orders_price, update_sell_price, sell, buy
+)
 from telegram_bot.bot import updater
 
 
@@ -16,6 +19,7 @@ async def main():
     task_take_items = asyncio.create_task(take_items())
     task_give_items = asyncio.create_task(give_items())
     task_update_orders_price = asyncio.create_task(update_orders_price())
+    task_update_sell_price = asyncio.create_task(update_sell_price())
 
     await task_bots_states_check
     await task_buy
@@ -23,6 +27,7 @@ async def main():
     await task_take_items
     await task_give_items
     await task_update_orders_price
+    await task_update_sell_price
 
 
 async def database_connect(db: Database):
@@ -42,7 +47,7 @@ if __name__ == '__main__':
 
     asyncio.run(database_connect(database))
 
-    updater.start_polling()
+    updater.start_polling(timeout=123)
 
     # запуск параллельных задач
     asyncio.run(main())
