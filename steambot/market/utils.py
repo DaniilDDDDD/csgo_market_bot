@@ -14,7 +14,7 @@ logger_name = str(__file__)[str(__file__)[: str(__file__).rfind('\\')].rfind('\\
 module_logger = logging.getLogger(logger_name)
 
 update_inventory_delta = delta(
-    minutes=int(os.environ.get('UPDATE_INVENTORY_DELTA'))
+    minutes=1
 )
 trade_lock_delta = delta(days=7)
 ping_pong_delta = delta(minutes=3)
