@@ -13,13 +13,19 @@ from telegram_bot.bot import updater
 async def main():
     """Все асинхронные задачи"""
 
-    task_bots_states_check = asyncio.create_task(bots_states_check())
+    task_bots_states_check = asyncio.create_task(
+        bots_states_check()
+    )
     task_sell = asyncio.create_task(sell())
     task_buy = asyncio.create_task(buy())
     task_take_items = asyncio.create_task(take_items())
     task_give_items = asyncio.create_task(give_items())
-    task_update_orders_price = asyncio.create_task(update_orders_price())
-    task_update_sell_price = asyncio.create_task(update_sell_price())
+    task_update_orders_price = asyncio.create_task(
+        update_orders_price()
+    )
+    task_update_sell_price = asyncio.create_task(
+        update_sell_price()
+    )
 
     await task_bots_states_check
     await task_buy
@@ -49,7 +55,4 @@ if __name__ == '__main__':
 
     updater.start_polling(timeout=123)
 
-    # запуск параллельных задач
     asyncio.run(main())
-
-    # database.disconnect()

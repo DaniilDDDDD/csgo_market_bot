@@ -7,8 +7,8 @@ from functools import wraps
 
 from telegram.ext import CommandHandler
 
-from market.models import Bot, ItemGroup, Item, User
-from market.bot import send_request_to_market, _delete_orders
+from market.models import Bot, ItemGroup, User
+from market.utils import send_request_to_market, delete_orders
 
 load_dotenv()
 
@@ -36,7 +36,10 @@ def restriction(handler_function):
         if user_id in asyncio.run(_allowed_users()):
             handler_function(update, context)
         else:
-            context.bot.send_message(chat_id=update.effective_chat.id, text='Boy next door!')
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Access denied!'
+            )
             return
 
     return wrapper
@@ -58,7 +61,10 @@ def check_args(context, update, arguments: dict):
 
         return arguments
     except AssertionError:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Wrong arguments passed!')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Wrong arguments passed!'
+        )
         return None
 
 
@@ -87,13 +93,11 @@ def help(update, context):
     result += list_item_group.__doc__
     result += create_item_group.__doc__
     result += set_item_group_state_amount.__doc__
-    #
-    # result += list_item.__doc__
-    # result += list_group_items.__doc__
-    # result += add_item_to_group.__doc__
-    # result += set_item_state.__doc__
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=result)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=result
+    )
 
 
 @restriction
@@ -102,14 +106,18 @@ def start(update, context):
 /start
     Бот работает лишь с заранее добавленными пользователями.
     """
-    context.bot.send_message(chat_id=update.effective_chat.id, text="I'm bot that abusing market.csgo!")
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="I am trade bot working with market.csgo!"
+    )
 
 
 @restriction
 def market_bot_inventory(update, context):
     """
 /market_bot_inventory
-    Инвентарь, полученный с маркета (отображаются предметы, доступные для продажи).
+    Инвентарь, полученный с маркета
+    (отображаются предметы, доступные для продажи).
     Аргументы:
         <id> - id бота.
     """
@@ -129,14 +137,20 @@ def market_bot_inventory(update, context):
     try:
         bot = asyncio.run(get_bot(**arguments))
     except AssertionError:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Bot with this "id" does not exists!')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Bot with this "id" does not exists!'
+        )
         return
 
     response = asyncio.run(send_request_to_market(
         bot,
         'https://market.csgo.com/api/v2/my-inventory/'
     ))
-    context.bot.send_message(chat_id=update.effective_chat.id, text=response.get('items'))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=response.get('items')
+    )
 
 
 @restriction
@@ -158,7 +172,10 @@ def list_user(update, context):
     for user in users:
         result += str(user) + '\n\n'
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=result)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=result
+    )
 
 
 @restriction
@@ -181,9 +198,15 @@ def add_user(update, context):
         if not arguments:
             return
         user = asyncio.run(add_user_in_db(**arguments))
-        context.bot.send_message(chat_id=update.effective_chat.id, text=str(user))
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=str(user)
+        )
     else:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="You are not allowed to add users!")
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="You are not allowed to add users!"
+        )
 
 
 @restriction
@@ -203,9 +226,15 @@ def delete_user(update, context):
         if not arguments:
             return
         asyncio.run(User.objects.delete(**arguments))
-        context.bot.send_message(chat_id=update.effective_chat.id, text='User deleted!')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='User deleted!'
+        )
     else:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="You are not allowed to delete users!")
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="You are not allowed to delete users!"
+        )
 
 
 @restriction
@@ -218,14 +247,20 @@ def list_bot(update, context):
     bots = asyncio.run(Bot.objects.all())
 
     if not bots:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Ботов нет.')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Ботов нет.'
+        )
         return
 
     result = 'Все боты:\n\n'
     for bot in bots:
         result += str(bot) + '\n\n'
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=result)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=result
+    )
 
 
 @restriction
@@ -282,7 +317,8 @@ def create_bot(update, context):
         api_key=arguments['api_key'],
         username=arguments['username'],
         password=arguments['password'],
-        steamguard_file=f'{basedir}/steam_guards/steam_guard_{arguments["steamid"]}.json',
+        steamguard_file=f'{basedir}/steam_guards/'
+                        f'steam_guard_{arguments["steamid"]}.json',
         description=arguments['description']
     ))
 
@@ -294,7 +330,10 @@ def create_bot(update, context):
     with open(bot.steamguard_file, "w", encoding="utf-8") as file:
         json.dump(data, file)
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=str(bot)
+    )
 
 
 @restriction
@@ -332,10 +371,16 @@ def set_bot_status(update, context):
     try:
         bot = asyncio.run(change_bot_state_in_db(**arguments))
     except AssertionError:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Bot with this "id" does not exists!')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Bot with this "id" does not exists!'
+        )
         return
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=str(bot)
+    )
 
 
 @restriction
@@ -367,7 +412,10 @@ def update_bot_market_secret(update, context):
 
     bot = asyncio.run(update_secret(**arguments))
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=str(bot))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=str(bot)
+    )
 
 
 @restriction
@@ -379,14 +427,20 @@ def list_item_group(update, context):
     item_groups = asyncio.run(ItemGroup.objects.all())
 
     if not item_groups:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Групп предметов нет.')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Групп предметов нет.'
+        )
         return
 
     result = 'Все группы предметов:\n\n'
     for item_group in item_groups:
         result += str(item_group) + '\n\n'
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=result)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=result
+    )
 
 
 @restriction
@@ -430,7 +484,10 @@ def create_item_group(update, context):
 
     group = asyncio.run(create_item_group_in_db(**arguments))
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=str(group)
+    )
 
 
 @restriction
@@ -450,8 +507,16 @@ def set_item_group_state_amount(update, context):
         <amount> - количество предметов в обороте.
     """
 
-    async def set_item_group_state_in_db(id: int, state: str, amount: int = None) -> ItemGroup:
-        _group = await ItemGroup.objects.select_related(ItemGroup.bot).get_or_none(id=id)
+    async def set_item_group_state_in_db(
+            id: int,
+            state: str,
+            amount: int = None
+    ) -> ItemGroup:
+        _group = await ItemGroup.objects.select_related(
+            ItemGroup.bot
+        ).get_or_none(
+            id=id
+        )
         assert _group
 
         if not state:
@@ -464,7 +529,9 @@ def set_item_group_state_amount(update, context):
                 await _group.update(
                     state=state,
                     amount=amount,
-                    to_order_amount=_group.to_order_amount + (amount - _group.amount)
+                    to_order_amount=_group.to_order_amount + (
+                            amount - _group.amount
+                    )
                 )
 
             elif amount < _group.amount:
@@ -482,7 +549,7 @@ def set_item_group_state_amount(update, context):
                         to_order_amount=amount
                     )
 
-                    await _delete_orders(_group.bot, _group)
+                    await delete_orders(_group.bot, _group)
 
             else:
                 await _group.update(state=state)
@@ -502,164 +569,28 @@ def set_item_group_state_amount(update, context):
         return
 
     try:
-        group = asyncio.run(set_item_group_state_in_db(**arguments))
+        group = asyncio.run(
+            set_item_group_state_in_db(**arguments)
+        )
     except AssertionError:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='Item group with this "id" does not exists!')
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Item group with this "id" does not exists!'
+        )
         return
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text=str(group))
-
-
-# @restriction
-# def list_item(update, context):
-#     """
-# /list_item
-#     Список всех предметов, принадлежищих всем группам.
-#     """
-#
-#     items = asyncio.run(Item.objects.all())
-#
-#     if not items:
-#         context.bot.send_message(chat_id=update.effective_chat.id, text='Предметов нет.')
-#         return
-#
-#     result = 'Все предметы:\n\n'
-#     for item in items:
-#         result += str(item) + '\n\n'
-#
-#     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
-#
-#
-# @restriction
-# def list_group_items(update, context):
-#     """
-# /list_group_items
-#     Список всех предметов указанной группы.
-#     Принимает один аргумент - id группы (<id>).
-#     """
-#
-#     arguments = {
-#         'id': '--'
-#     }
-#     arguments = check_args(context, update, arguments)
-#     if not arguments:
-#         return
-#
-#     items = asyncio.run(Item.objects.filter(item_group=int(arguments['id'])).all())
-#
-#     if not items:
-#         context.bot.send_message(chat_id=update.effective_chat.id, text='В этой группе предметов нет.')
-#         return
-#
-#     result = 'Все предметы группы:\n\n'
-#     for item in items:
-#         result += str(item) + '\n\n'
-#
-#     context.bot.send_message(chat_id=update.effective_chat.id, text=result)
-#
-#
-# @restriction
-# def add_item_to_group(update, context):
-#     """
-# /add_item_to_group
-#     Добавляет предмет к группе.
-#     Принимает аргументы:
-#         <item_group> - группа предметов,
-#         <state> - статус (for_buy по умолчанию),
-#         <classid> - classid предмета (только если предмет имеется в инвентаре и статус for_sale),
-#         <instanceid> - instance id предмета (только если предмет имеется в инвентаре и статус for_sale).
-#     """
-#
-#     async def create_item_in_db(
-#             item_group: int,
-#             state: str,
-#             classid: str = None,
-#             instanceid: str = None
-#     ) -> Item:
-#         _group = await ItemGroup.objects.get_or_none(id=item_group)
-#         assert _group
-#         _item = await Item.objects.create(
-#             item_group=_group,
-#             state=state,
-#             market_hash_name=_group.market_hash_name,
-#             classid=classid,
-#             instanceid=instanceid
-#         )
-#         await _group.update(amount=_group.amount + 1, to_order_amount=_group.to_order_amount + 1)
-#         return _item
-#
-#     arguments = {
-#         'item_group': '--',
-#         'state': 'for_buy',
-#         'classid': None,
-#         'instanceid': None
-#     }
-#     arguments = check_args(context, update, arguments)
-#     if not arguments:
-#         return
-#
-#     try:
-#
-#         if arguments['state'] == 'for_sale':
-#             assert arguments['classid'] and arguments['instanceid']
-#
-#         item = asyncio.run(create_item_in_db(**arguments))
-#     except AssertionError:
-#         context.bot.send_message(chat_id=update.effective_chat.id, text='Item group with this "id" does not exists!')
-#         return
-#
-#     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
-#
-#
-# @restriction
-# def set_item_state(update, context):
-#     """
-# /set_item_state
-#     Установка предмету нового статуса.
-#     Возможные статусы:
-#         ordered - предмет заказан;
-#         for_buy - предмет будет куплен (заказан);
-#         for_sale - предмет будет продан (если он доступен для продажи);
-#         on_sale - предмет выставлен на продажу;
-#         hold - предмет удерживается;
-#         delete - удалить предмет.
-#     Принимает аргументы:
-#         <id> - id бота,
-#         <state> - новый статус бота.
-#     """
-#
-#     arguments = {
-#         'id': '--',
-#         'state': '--'
-#     }
-#     arguments = check_args(context, update, arguments)
-#     if not arguments:
-#         return
-#
-#     try:
-#         item = asyncio.run(Item.objects.select_related(Item.item_group.bot).get_or_none(id=int(arguments['id'])))
-#         assert item
-#
-#         if arguments['state'] == 'hold':
-#             asyncio.run(hold_item(item))
-#
-#         elif arguments['state'] == 'delete':
-#             asyncio.run(delete_item(item))
-#             item.state = 'delete'
-#
-#         else:
-#             asyncio.run(item.update(state=arguments['state']))
-#
-#     except AssertionError:
-#         context.bot.send_message(chat_id=update.effective_chat.id, text='Item with this "id" does not exists!')
-#         return
-#
-#     context.bot.send_message(chat_id=update.effective_chat.id, text=str(item))
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=str(group)
+    )
 
 
 start_handler = CommandHandler('start', start)
 help_handler = CommandHandler('help', help)
-market_bot_inventory_handler = CommandHandler('market_bot_inventory', market_bot_inventory)
+market_bot_inventory_handler = CommandHandler(
+    'market_bot_inventory',
+    market_bot_inventory
+)
 
 list_user_handler = CommandHandler('list_user', list_user)
 add_user_handler = CommandHandler('add_user', add_user)
@@ -667,14 +598,25 @@ delete_user_handler = CommandHandler('delete_user', delete_user)
 
 list_bot_handler = CommandHandler('list_bot', list_bot)
 create_bot_handler = CommandHandler('create_bot', create_bot)
-set_bot_status_handler = CommandHandler('set_bot_status', set_bot_status)
-update_bot_market_secret_handler = CommandHandler('update_bot_market_secret', update_bot_market_secret)
+set_bot_status_handler = CommandHandler(
+    'set_bot_status',
+    set_bot_status
+)
+update_bot_market_secret_handler = CommandHandler(
+    'update_bot_market_secret',
+    update_bot_market_secret
+)
 
-list_item_group_handler = CommandHandler('list_item_group', list_item_group)
-create_item_group_handler = CommandHandler('create_item_group', create_item_group)
-set_item_group_state_handler = CommandHandler('set_item_group_state_amount', set_item_group_state_amount)
+list_item_group_handler = CommandHandler(
+    'list_item_group',
+    list_item_group
+)
+create_item_group_handler = CommandHandler(
+    'create_item_group',
+    create_item_group
+)
+set_item_group_state_handler = CommandHandler(
+    'set_item_group_state_amount',
+    set_item_group_state_amount
+)
 
-# list_item_handler = CommandHandler('list_item', list_item)
-# list_group_items_handler = CommandHandler('list_group_items', list_group_items)
-# add_item_to_group_handler = CommandHandler('add_item_to_group', add_item_to_group)
-# set_item_state_handler = CommandHandler('set_item_state', set_item_state)

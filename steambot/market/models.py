@@ -19,9 +19,14 @@ class Bot(ormar.Model):
     """
 
     state: str = ormar.String(nullable=False, max_length=100)
-    update_inventory_timestamp: datetime.datetime = ormar.DateTime(default=datetime.datetime.now())
 
-    last_ping_pong: datetime.datetime = ormar.DateTime(default=datetime.datetime.now() - delta(minutes=3))
+    update_inventory_timestamp: datetime.datetime = ormar.DateTime(
+        default=datetime.datetime.now()
+    )
+
+    last_ping_pong: datetime.datetime = ormar.DateTime(
+        default=datetime.datetime.now() - delta(minutes=3)
+    )
 
     secret_key: set = ormar.String(nullable=False, unique=True, max_length=1000)
 
@@ -51,6 +56,9 @@ class ItemGroup(ormar.Model):
 
     market_hash_name: str = ormar.String(nullable=True, max_length=1000, unique=True)
 
+    # дабы предмет не был продан за невыгодную цену и бот ущёл в минус
+    min_sell_price: int = ormar.Integer(default=0, minimum=0)
+
     # количество предметов, участвующих в обороте
     amount: int = ormar.Integer(default=1, minimum=0)
     # количество предметов, оставшихся для создания ордера
@@ -60,7 +68,8 @@ class ItemGroup(ormar.Model):
         return f"Group of items id is {self.id}.\n" \
                f"Group's state is {self.state}.\n" \
                f"Group belongs to bot with id {self.bot.id}.\n" \
-               f"Group contains items with market hash name {getattr(self, 'market_hash_name', 'None')}.\n" \
+               f"Group contains items with market hash name" \
+               f" {getattr(self, 'market_hash_name', 'None')}.\n" \
                f"Group rounds {self.amount} items."
 
 
@@ -98,7 +107,8 @@ class Item(ormar.Model):
                f"Item belongs to group of items with id {self.item_group.id}.\n" \
                f"Item would be bought for {self.ordered_for} and sold for {self.sell_for}.\n" \
                f"If item is bought it's id on market is {getattr(self, 'market_id', 'None')}, " \
-               f"classid is {getattr(self, 'classid', 'None')}, instanceid is {getattr(self, 'instanceid', 'None')}."
+               f"classid is {getattr(self, 'classid', 'None')}, " \
+               f"instanceid is {getattr(self, 'instanceid', 'None')}."
 
 
 class User(ormar.Model):

@@ -4,10 +4,14 @@ from steampy.utils import GameOptions
 
 from steampy.client import SteamClient, Asset, TradeOfferState
 
-from .models import Bot, Item, ItemGroup
+from .models import Bot, ItemGroup
 
-from .bot import (bot_work, send_request_to_market, bot_balance, bot_update_inventory,
-                  _delete_sale_offers, _delete_orders, _group_buy, _group_sell)
+from .utils import (
+    bot_work, send_request_to_market,
+    bot_update_inventory, update_bots_orders, delete_sale_offers,
+    delete_orders, _group_buy, _group_sell,
+    update_selling_items
+)
 from logs.logger import log
 
 logger_name = str(__file__)[str(__file__)[: str(__file__).rfind('\\')].rfind('\\'):]
@@ -41,18 +45,35 @@ async def bots_states_check():
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
                 elif bot.state == 'sell':
-                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy']).update(state='sell')
+                    await ItemGroup.objects.filter(
+                        bot=bot
+                    ).filter(
+                        state__in=['active', 'buy']
+                    ).update(
+                        state='sell'
+                    )
 
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
                 elif bot.state == 'buy':
-                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'sell']).update(state='buy')
+                    await ItemGroup.objects.filter(
+                        bot=bot
+                    ).filter(
+                        state__in=['active', 'sell']
+                    ).update(
+                        state='buy'
+                    )
 
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
                 elif bot.state == 'hold':
-                    await ItemGroup.objects.filter(bot=bot).filter(state__in=['active', 'buy', 'sell']).update(
-                        state='hold')
+                    await ItemGroup.objects.filter(
+                        bot=bot
+                    ).filter(
+                        state__in=['active', 'buy', 'sell']
+                    ).update(
+                        state='hold'
+                    )
 
                     tasks.append(asyncio.create_task(bot_work(bot)))
 
@@ -66,15 +87,19 @@ async def bots_states_check():
                     groups = await ItemGroup.objects.filter(bot=bot).all()
 
                     for group in groups:
-                        task_delete_sale_offers = asyncio.create_task(_delete_sale_offers(
-                            bot,
-                            group
-                        ))
+                        task_delete_sale_offers = asyncio.create_task(
+                            delete_sale_offers(
+                                bot,
+                                group
+                            )
+                        )
 
-                        task_delete_orders = asyncio.create_task(_delete_orders(
-                            bot,
-                            group
-                        ))
+                        task_delete_orders = asyncio.create_task(
+                            delete_orders(
+                                bot,
+                                group
+                            )
+                        )
 
                         await task_delete_orders
                         await task_delete_sale_offers
@@ -88,7 +113,7 @@ async def bots_states_check():
 
             await asyncio.sleep(10)
 
-    except Exception as e:
+    except Exception:
         await bots_states_check()
 
 
@@ -120,7 +145,9 @@ async def buy():
     log('In buy items:')
 
     async def bot_buy(bot: Bot):
-        groups = await ItemGroup.objects.exclude(state__in=['disabled', 'sell', 'hold']).all()
+        groups = await ItemGroup.objects.exclude(
+            state__in=['disabled', 'sell', 'hold']
+        ).all()
         _tasks = [asyncio.create_task(_group_buy(bot, _group)) for _group in groups]
         for _task in _tasks:
             await _task
@@ -145,77 +172,10 @@ async def buy():
 async def update_orders_price():
     """
     Обновление цен на автоматическую покупку предмета:
-    если появляется ордер от другого пользователя, который автоматически покупает предмет, но за большую сумму,
-    то обновляему ордер, чтобы наш был дороже, дабы ордер был удовлетворён ранее
+    если появляется ордер от другого пользователя, который автоматически покупает предмет,
+     но за большую сумму, то обновляему ордер, чтобы наш был дороже,
+      дабы ордер был удовлетворён ранее
     """
-
-    async def update_bots_orders(bot):
-        log(f'In update_orders_price for bot {bot.id}')
-
-        orders = await send_request_to_market(
-            bot,
-            'https://market.csgo.com/api/GetOrders//',
-            error_recursion=True,
-            return_error=True
-        )
-        if 'error' in orders or orders['Orders'] == 'No orders':
-            return
-
-        for item in orders['Orders']:
-
-            try:
-                response = await send_request_to_market(
-                    bot,
-                    f'https://market.csgo.com/api/BestBuyOffer/{item["i_classid"]}_{item["i_instanceid"]}/',
-                    return_error=True
-                )
-                if 'error' in response:
-                    continue
-                else:
-                    best_offer = int(response.get('best_offer'))
-
-                response = await send_request_to_market(
-                    bot,
-                    'https://market.csgo.com/api/v2/search-item-by-hash-name',
-                    {
-                        'hash_name': item['i_market_hash_name']
-                    },
-                    error_recursion=True
-                )
-                if response['data']:
-                    sell_for = response['data'][0]['price'] - 1
-                else:
-                    continue
-
-                if (
-                        best_offer >= int(item['o_price'])
-                        and (best_offer + 1) < int(sell_for * 0.9)
-                        and (best_offer + 1) < await bot_balance(bot) * 100
-                ) or (
-                        # если цена продажи предмета более 500 рублей, то при отмене самого большого ордера на продажу,
-                        # исходящего не от нас и отличающегося от нашего холтя бы на 3%,
-                        # сменяем цену на цену этого ордера + 1
-                        int(item['o_price']) - best_offer > int(sell_for * 0.03)
-                        and sell_for > 50000
-                ):
-                    log('In update order:')
-                    response = await send_request_to_market(
-                        bot,
-                        f'https://market.csgo.com/api/UpdateOrder/'
-                        f'{item["i_classid"]}/{item["i_instanceid"]}/{best_offer + 1}/',
-                        return_error=True
-                    )
-                    if 'error' in response:
-                        log(
-                            f'Order for item with classid {item["i_classid"]} and inctanceid {item["i_instanceid"]}'
-                            f' can not be changed now!',
-                            'ERROR'
-                        )
-                        continue
-
-            except Exception as e:
-                log(e, 'ERROR')
-                continue
 
     try:
 
@@ -238,45 +198,6 @@ async def update_sell_price():
     """
 
     log('In update_sell_price:')
-
-    async def update_selling_items(bot: Bot):
-
-        items_on_sale = await send_request_to_market(
-            bot,
-            'https://market.csgo.com/api/v2/items',
-            error_recursion=True,
-            return_error=True
-        )
-        if not items_on_sale['items'] or 'error' in items_on_sale:
-            log(f'No items in active of this group!')
-            return
-
-        for item in items_on_sale['items']:
-            if item['status'] == '1':
-
-                items = await send_request_to_market(
-                    bot,
-                    'https://market.csgo.com/api/v2/search-item-by-hash-name',
-                    {
-                        'hash_name': item['market_hash_name']
-                    }
-                )
-
-                for _item in items['data']:
-                    if _item['price'] < item['price']:
-                        response = await send_request_to_market(
-                            bot,
-                            'https://market.csgo.com/api/v2/set-price',
-                            {
-                                'item_id': item['item_id'],
-                                'price': _item['price'] - 1
-                            },
-                            error_recursion=True,
-                            return_error=True
-                        )
-                        if 'error' in response:
-                            log(response['error'])
-                            break
 
     try:
 
@@ -336,12 +257,15 @@ async def take_items():
 
         for offer in offers['response']['trade_offers_received']:
             log(f'Incoming trade offers:\n{offer}')
-            # если донат, то принимаем (так как при покупке от нас не требуется никаких предметов)
+            # если донат, то принимаем
+            # (так как при покупке от нас не требуется никаких предметов)
             if is_donation(offer):
                 print(offer['items_to_receive'])
                 steam_client.accept_trade_offer(offer['tradeofferid'])
                 for key, value in offer['items_to_receive'].items():
-                    group = await ItemGroup.objects.get(market_hash_name=value['market_hash_name'])
+                    group = await ItemGroup.objects.get(
+                        market_hash_name=value['market_hash_name']
+                    )
                     await group.update(to_order_amount=group.to_order_amount + 1)
 
         if offers['response']['trade_offers_received']:
@@ -394,10 +318,13 @@ async def give_items():
                 try:
                     steam_client.make_offer_with_url(
                         message=offer['tradeoffermessage'],
-                        items_from_me=[Asset(asset['assetid'], game) for asset in offer['items']],
+                        items_from_me=[
+                            Asset(asset['assetid'], game) for asset in offer['items']
+                        ],
                         items_from_them=[],
                         trade_offer_url=f"https://steamcommunity.com/tradeoffer/new/"
-                                        f"?partner={offer['partner']}&token={offer['token']}"
+                                        f"?partner={offer['partner']}"
+                                        f"&token={offer['token']}"
                     )
                 except Exception as _e:
                     log(_e, 'ERROR')
